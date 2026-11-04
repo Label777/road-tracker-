@@ -12,6 +12,9 @@ const browser = await engine.launch();
 const context = await browser.newContext({
   viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, isMobile: engine.name() !== 'firefox', hasTouch: true,
   locale: 'ru-RU', timezoneId: 'Europe/Kyiv',
+  // waitForFunction в WebKit выполняет строку через eval — нашу CSP (script-src 'self') это блокирует.
+  // Саму CSP сайта проверяет e2e в Chrome (нарушения ловятся через Log.entryAdded).
+  bypassCSP: true,
 });
 const page = await context.newPage();
 const errors = [];
