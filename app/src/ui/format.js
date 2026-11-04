@@ -42,6 +42,18 @@ export function formatClock(ms) {
 export const formatPercent = (x, signed = false) =>
   (signed && x > 0 ? '+' : '') + new Intl.NumberFormat(LOCALE, { style: 'percent', maximumFractionDigits: 0 }).format(x);
 export const formatKm = (m) => `${(m / 1000).toFixed(1).replace('.', ',')} км`;
+/** 640 м / 1,2 км */
+export const formatDistance = (m) => (m < 1000 ? `${Math.round(m / 10) * 10}\u00a0м` : `${(m / 1000).toFixed(1).replace('.', ',')}\u00a0км`);
+export const plural = (n, one, few, many) => {
+  const a = Math.abs(n) % 100;
+  const b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b === 1) return one;
+  return b >= 2 && b <= 4 ? few : many;
+};
+/** «870 шагов»; оценка — со знаком «≈». */
+export const formatSteps = (n, source = 'sensor') =>
+  `${source === 'sensor' ? '' : '≈'}${n.toLocaleString('ru-RU')}\u00a0${plural(n, 'шаг', 'шага', 'шагов')}`;
 
 /** Значение для <input type="datetime-local"> в поясе устройства. */
 export function toInputDateTime(ms) {

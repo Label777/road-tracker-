@@ -48,6 +48,20 @@ try {
   });
   check(fold, 'iPhone SE: старт и расходы сегодня/за месяц видны без прокрутки');
 
+  // Пунктирное кольцо — ровно вокруг кнопки (в Safari оно смещалось при вращении)
+  const ringOffset = () => page.evaluate(async () => {
+    let worst = 0;
+    for (let i = 0; i < 6; i++) {
+      const o = document.querySelector('.start-orb').getBoundingClientRect();
+      const r = document.querySelector('.start-orb .ring').getBoundingClientRect();
+      worst = Math.max(worst, Math.abs(o.left + o.width / 2 - (r.left + r.width / 2)), Math.abs(o.top + o.height / 2 - (r.top + r.height / 2)));
+      await new Promise((res) => setTimeout(res, 150));
+    }
+    return worst;
+  });
+  const idleOff = await ringOffset();
+  check(idleOff <= 1, `кольцо «Старт» по центру кнопки (смещение ${idleOff.toFixed(1)} px)`);
+
   // Добавление из центра меню
   await page.click('nav.tabs [data-nav="quick-add"]');
   await page.waitForSelector('#sheet [data-action="qa-save"]');
@@ -68,6 +82,10 @@ try {
   // Ссылки-действия
   await page.evaluate(() => { location.hash = '#/do/toggle?dir=to_work'; });
   await until(() => !!window.roadTracker.tracker.session && location.hash === '#/trip', "() => !!window.roadTracker.tracker.session && location.hash === '#/trip'");
+  await page.evaluate(() => { location.hash = '#/home'; });
+  await page.waitForSelector('.start-orb.recording');
+  const recOff = await ringOffset();
+  check(recOff <= 1, `кольцо во время записи по центру (смещение ${recOff.toFixed(1)} px)`);
   await page.evaluate(() => { location.hash = '#/do/finish'; });
   await until(() => !window.roadTracker.tracker.session && location.hash === '#/home', "() => !window.roadTracker.tracker.session && location.hash === '#/home'");
   check((await count()) === 3, 'ссылки #/do/toggle и #/do/finish записывают поездку');

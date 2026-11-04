@@ -6,11 +6,11 @@ import { formatMoney, parseMoney, moneyToInput } from '../../core/money.js';
 import { formatDuration, formatHours, periodInterval, zonedParts, HOUR } from '../../core/time.js';
 import {
   totalsOf, inInterval, costByDirection, costByTransport, dailySeries, averageCommuteDayCost, forecast,
-  compareRoutes, projectSavings, averageTripMs, routeStats, segmentSignature,
+  compareRoutes, projectSavings, averageTripMs, routeStats, segmentSignature, movementTotals,
 } from '../../core/analytics.js';
 import { inspectionStats } from '../../core/inspections.js';
 import { insights } from '../../core/insights.js';
-import { TRANSPORT, TRANSPORT_ICONS, OUTCOME_LABELS, RELIABILITY, ICONS, formatPercent, LOCALE } from '../format.js';
+import { TRANSPORT, TRANSPORT_ICONS, OUTCOME_LABELS, RELIABILITY, ICONS, formatPercent, LOCALE, formatDistance, plural } from '../format.js';
 
 const PERIODS = { week: 'Неделя', month: 'Месяц', year: 'Год' };
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
@@ -185,6 +185,30 @@ function savingsResult(c) {
     ${m ? html`<p class="t-caption">За месяц (${c.trips} поездок): ${formatMoney(m.money)} экономии и ${m.hours.toFixed(1).replace('.', ',')} ч в дороге дополнительно.</p>` : ''}`;
 }
 
+const PERIOD_IN = { week: 'за неделю', month: 'за месяц', year: 'за год' };
+
+/** Пешком и расстояние: шаги, метры, среднее в день с ходьбой. */
+function movementSection(trips, period) {
+  const m = movementTotals(trips);
+  if (!m.walkTrips && !m.gpsTrips) return '';
+  const approx = m.estimated ? '≈' : '';
+  return html`<section class="reveal">${sectionTitle('Пешком и расстояние')}
+    ${metricGrid(
+      metricCard(`Шаги ${PERIOD_IN[period]}`, m.steps ? `${approx}${m.steps.toLocaleString('ru-RU')}` : '—', {
+        icon: TRANSPORT_ICONS.walk,
+        hint: m.walkDays ? `в среднем ${approx}${Math.round(m.steps / m.walkDays).toLocaleString('ru-RU')} в день с ходьбой` : 'нет пеших этапов',
+      }),
+      metricCard(`Пешком ${PERIOD_IN[period]}`, m.walkMeters ? formatDistance(m.walkMeters) : '—', {
+        hint: m.walkMeters ? `${m.walkTrips} ${plural(m.walkTrips, 'поездка', 'поездки', 'поездок')} с ходьбой` : 'расстояние — с GPS',
+      }),
+      metricCard(`Всего в пути ${PERIOD_IN[period]}`, m.gpsMeters ? formatDistance(m.gpsMeters) : '—', {
+        hint: m.gpsTrips ? `по GPS, ${m.gpsTrips} ${plural(m.gpsTrips, 'поездка', 'поездки', 'поездок')}` : 'включите GPS в поездке',
+      }),
+    )}
+    ${m.estimated ? html`<p class="t-caption" style="margin-top:var(--s-2)">«≈» — часть шагов оценена по расстоянию GPS или времени ходьбы. Точнее — с датчиком (Профиль → Шаги).</p>` : ''}
+  </section>`;
+}
+
 function insightsSection(all, period, now) {
   const items = insights(all, period, now);
   if (!items.length) return '';
@@ -246,6 +270,7 @@ export const analyticsView = {
         </section>
 
         <section class="reveal">${sectionTitle('Транспорт')}${transportSection(trips)}</section>
+        ${movementSection(trips, period)}
         <section class="reveal">${sectionTitle('Сравнение маршрутов')}${routesSection(app, trips)}</section>
 
         <section class="reveal">

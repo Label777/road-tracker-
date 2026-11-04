@@ -42,6 +42,7 @@ function segmentCard(seg, i, count) {
         <label class="field"><span>Стоимость, ₴</span><input inputmode="decimal" data-field="seg.${i}.cost" value="${moneyToInput(seg.cost)}" placeholder="0"></label>
         <label class="field"><span>Расстояние, км</span><input inputmode="decimal" data-field="seg.${i}.km" value="${seg.distance_meters != null ? String(seg.distance_meters / 1000).replace('.', ',') : ''}"></label>
       </div>
+      ${seg.transport_type === 'walk' ? html`<label class="field"><span>Шаги — если знаете точно (из «Здоровья»)</span><input inputmode="numeric" data-field="seg.${i}.steps" value="${seg.steps ?? ''}" placeholder="оценка по расстоянию или времени"></label>` : ''}
       <label class="field"><span>Комментарий</span><input data-field="seg.${i}.comment" value="${seg.comment}"></label>
       ${TICKETED.has(seg.transport_type) ? inspectionFields(seg.inspection, `seg.${i}.insp`) : ''}
       <div class="btn-row" style="justify-content:flex-end;margin-top:var(--s-2)">
@@ -169,6 +170,11 @@ export const editorView = {
         const km = v.trim() === '' ? null : Number(v.replace(',', '.'));
         el.classList.toggle('invalid', km != null && !(km >= 0));
         seg.distance_meters = km != null && km >= 0 ? Math.round(km * 1000) : null;
+      } else if (key === 'steps') {
+        const n = v.trim() === '' ? null : Number(v);
+        const ok = n == null || (Number.isInteger(n) && n >= 0 && n <= 200_000);
+        el.classList.toggle('invalid', !ok);
+        if (ok) seg.steps = n;
       } else if (key === 'started_at' || key === 'finished_at') seg[key] = fromInputDateTime(v);
       else {
         seg[key] = v;

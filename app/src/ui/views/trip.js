@@ -5,9 +5,12 @@ import {
   topBar, trackingStatus, segmented, transportSelector, primaryButton, secondaryButton, notice, emptyState, sectionTitle,
 } from '../components.js';
 import { formatMoney, parseMoney, moneyToInput } from '../../core/money.js';
-import { trackDistance } from '../../core/geo.js';
+import { trackDistance, segmentDistances } from '../../core/geo.js';
+import { segmentSteps, STEP_SOURCE } from '../../core/steps.js';
+import { motionSupported, requestMotion } from '../step-sensor.js';
 import {
   DIRECTIONS, TRANSPORT, OUTCOME_LABELS, ICONS, TRANSPORT_ICONS, segmentTitle, formatTime, formatKm, formatClock,
+  formatDistance, formatSteps, plural,
 } from '../format.js';
 import { LiveMap } from '../map.js';
 import { sheetHeader } from '../sheet.js';
@@ -15,14 +18,26 @@ import { frequentCosts, routeNumbers } from '../suggest.js';
 import { finishTrip, finishedText } from '../actions.js';
 import { openChangeSheet, MAIN_TRANSPORT } from './start-sheet.js';
 
+/** Пока идём пешком: откуда шаги и как включить датчик. */
+function walkingNote(app, estimate, sensing) {
+  const sensor = app.steps;
+  if (sensing && sensor.status === 'unavailable') {
+    return html`<p class="t-caption warn">Датчик движения не отвечает — шаги считаются ${estimate ? STEP_SOURCE[estimate.source] : 'по расстоянию или времени'}.</p>`;
+  }
+  if (sensing) return html`<p class="t-caption accent">Шаги считает датчик телефона — держите сайт открытым.</p>`;
+  return html`<p class="t-caption">${estimate ? `Шаги — оценка ${STEP_SOURCE[estimate.source]}.` : ''}
+    ${motionSupported() ? html` <button class="btn btn-ghost btn-sm" data-action="enable-steps">Считать шаги датчиком</button>` : ''}</p>`;
+}
+
 /** «Сменил транспорт»: что сейчас и пересадка в одно-два касания. */
-function changeBlock(current) {
+function changeBlock(current, walking = '') {
   const options = MAIN_TRANSPORT.filter((t) => t !== current?.transport_type);
   return html`
     <div class="change-block">
       <p class="t-callout">${current
         ? html`Сейчас: <b>${segmentTitle(current)}</b> · с ${formatTime(current.started_at)}`
         : 'Отметьте, на чём едете — так учтутся цена и пересадки.'}</p>
+      ${walking}
       <p class="t-caption" style="margin:var(--s-2) 0">${current ? 'Сменили транспорт?' : 'На чём едете?'}</p>
       <div class="change-buttons" role="group" aria-label="${current ? 'Сменить транспорт' : 'Выбрать транспорт'}">
         ${options.map((t) => html`<button class="change-option" data-action="change-to" data-value="${t}">${TRANSPORT_ICONS[t]}<span>${TRANSPORT[t]}</span></button>`)}
@@ -42,6 +57,18 @@ function recording(app) {
   const track = trip ? store.trackOf(trip.id) : [];
   const current = segments.at(-1);
   const info = tracker.gpsInfo;
+  const now = Date.now();
+  // Расстояние этапов: сохранённое или по треку (для текущего — до этой секунды)
+  const live = track.length > 1 ? segmentDistances(track, segments, now) : new Map();
+  const distOf = (seg) => seg.distance_meters ?? (live.get(seg.id) || null);
+  const stride = store.stride();
+  const stepsOf = (seg) => segmentSteps(seg, { stride, now, distance: distOf(seg) });
+  const walkSegs = segments.filter((x) => x.transport_type === 'walk');
+  const sensor = app.steps;
+  const sensing = sensor?.segId && sensor.segId === current?.id;
+  let totalSteps = 0;
+  for (const seg of walkSegs) totalSteps += (seg.id === current?.id && sensing ? sensor.count : stepsOf(seg)?.steps) || 0;
+  const walkingNow = current && !current.finished_at && current.transport_type === 'walk';
   const status = s.pausedSince ? trackingStatus('warn', 'Пауза')
     : s.mode !== 'gps' ? trackingStatus('idle', 'Без GPS')
       : info?.error ? trackingStatus('warn', info.error)
@@ -71,7 +98,9 @@ function recording(app) {
 
         <div class="trip-stats">
           <div><span class="t-caption">Расстояние</span><span class="t-num">${track.length > 1 ? formatKm(trackDistance(track)) : '—'}</span></div>
-          <div><span class="t-caption">Старт</span><span class="t-num">${formatTime(s.startedAt)}</span></div>
+          ${walkSegs.length
+            ? html`<div><span class="t-caption">Шаги</span><span class="t-num" ${sensing && walkSegs.length === 1 ? html`data-steps-live` : ''}>${totalSteps ? totalSteps.toLocaleString('ru-RU') : '—'}</span></div>`
+            : html`<div><span class="t-caption">Старт</span><span class="t-num">${formatTime(s.startedAt)}</span></div>`}
           <div><span class="t-caption">Стоимость</span><span class="t-num">${formatMoney(trip ? store.tripCost(trip) : 0)}</span></div>
         </div>
 
@@ -81,10 +110,15 @@ function recording(app) {
             const insp = inspections.find((x) => x.segment_id === seg.id);
             return html`<div class="timeline-item ${i === segments.length - 1 && !seg.finished_at ? 'current' : ''}">
               <div class="row-between"><span class="t-sub">${segmentTitle(seg)}</span><span class="t-num">${formatMoney(seg.cost)}</span></div>
-              <div class="t-caption">${formatTime(seg.started_at)}${seg.finished_at ? ` – ${formatTime(seg.finished_at)}` : ' — сейчас'}${insp ? ` · ${OUTCOME_LABELS[insp.outcome]}` : ''}</div>
+              <div class="t-caption">${formatTime(seg.started_at)}${seg.finished_at ? ` – ${formatTime(seg.finished_at)}` : ' — сейчас'}${distOf(seg) ? ` · ${formatDistance(distOf(seg))}` : ''}${(() => {
+                if (seg.transport_type !== 'walk') return '';
+                if (seg.id === current?.id && sensing) return html` · <span data-steps-live>${sensor.count.toLocaleString('ru-RU')}</span> ${plural(sensor.count, 'шаг', 'шага', 'шагов')}`;
+                const st = stepsOf(seg);
+                return st ? ` · ${formatSteps(st.steps, st.source)}` : '';
+              })()}${insp ? ` · ${OUTCOME_LABELS[insp.outcome]}` : ''}</div>
             </div>`;
           })}</div>` : ''}
-          ${changeBlock(current && !current.finished_at ? current : null)}
+          ${changeBlock(current && !current.finished_at ? current : null, walkingNow ? walkingNote(app, stepsOf(current), sensing) : '')}
           <div class="btn-row" style="margin-top:var(--s-3)">
             ${secondaryButton('Контролёр', { action: 'open-inspection', icon: ICONS.shield })}
           </div>
@@ -182,6 +216,14 @@ export const tripView = {
       const route = trip?.route_id ? app.store.data.routes.get(trip.route_id) : null;
       const next = route?.segments[app.store.segmentsOf(s.tripId).length] ?? null;
       openChangeSheet(app, next ? { template: next } : { transport: 'metro' });
+    },
+    'enable-steps': async (app) => {
+      if (!(await requestMotion())) {
+        app.toast('Нет доступа к датчику движения. Разрешить: Настройки → Safari → «Движение и ориентация».');
+        return;
+      }
+      await app.saveSettings({ stepSensor: true });
+      app.haptic('success');
     },
     'change-to': (app, el) => { app.haptic(); openChangeSheet(app, { transport: el.dataset.value }); },
     'open-inspection': (app) => app.openSheet(inspectionSheet),

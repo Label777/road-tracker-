@@ -1,0 +1,80 @@
+// Шаги на этапах «Пешком».
+// Источники по точности: датчик движения телефона (настоящие шаги, пока сайт открыт) →
+// расстояние по GPS, делённое на длину шага (от роста) → время ходьбы × средний темп.
+// Оценки помечаются в интерфейсе знаком «≈» с пояснением, откуда они.
+
+export const DEFAULT_STRIDE_M = 0.72; // средняя длина шага взрослого
+export const WALK_CADENCE = 100; // шагов в минуту — обычный городской темп
+
+/** Длина шага по росту: ≈ 0,415 × рост (общепринятая формула для ходьбы). */
+export const strideFromHeight = (cm) => (cm >= 120 && cm <= 230 ? Math.round(cm * 0.415) / 100 : DEFAULT_STRIDE_M);
+
+/**
+ * @returns {null | {steps: number, source: 'sensor'|'distance'|'time'}}
+ */
+export function segmentSteps(seg, { stride = DEFAULT_STRIDE_M, now = Date.now(), distance = null } = {}) {
+  if (seg.transport_type !== 'walk') return null;
+  if (seg.steps != null) return { steps: seg.steps, source: 'sensor' };
+  const meters = distance ?? seg.distance_meters;
+  if (meters > 0) return { steps: Math.round(meters / stride), source: 'distance' };
+  const end = seg.finished_at ?? now;
+  if (seg.started_at != null && end > seg.started_at) {
+    return { steps: Math.round(((end - seg.started_at) / 60_000) * WALK_CADENCE), source: 'time' };
+  }
+  return null;
+}
+
+/** Итог по поездке: сумма шагов этапов «Пешком»; источник — наименее точный из использованных. */
+export function tripSteps(segments, opts = {}) {
+  const rank = { sensor: 0, distance: 1, time: 2 };
+  let steps = 0;
+  let source = null;
+  for (const seg of segments) {
+    const r = segmentSteps(seg, { ...opts, distance: opts.distances?.get(seg.id) ?? null });
+    if (!r) continue;
+    steps += r.steps;
+    if (!source || rank[r.source] > rank[source]) source = r.source;
+  }
+  return source ? { steps, source } : null;
+}
+
+export const STEP_SOURCE = {
+  sensor: 'по датчику телефона',
+  distance: 'по расстоянию GPS и длине шага',
+  time: 'по времени ходьбы, ≈100 шагов в минуту',
+};
+
+/**
+ * Счётчик шагов по акселерометру (DeviceMotion): сглаживание, порог над скользящим средним,
+ * интервал между шагами 0,25–2 с. Шаги засчитываются сериями от 4 подряд — тряска в
+ * транспорте и одиночные толчки не считаются.
+ */
+export function createStepDetector({ minInterval = 250, maxInterval = 2000, threshold = 1.2, warmup = 4 } = {}) {
+  let smooth = null;
+  let mean = 9.81;
+  let above = false;
+  let lastStep = null;
+  let streak = 0;
+  return {
+    /** @returns {number} сколько шагов засчитано этим отсчётом (0, 1 или warmup при начале серии) */
+    push(t, x, y, z) {
+      const m = Math.sqrt(x * x + y * y + z * z);
+      smooth = smooth == null ? m : smooth + 0.35 * (m - smooth);
+      mean += 0.02 * (smooth - mean);
+      let counted = 0;
+      if (!above && smooth > mean + threshold) {
+        above = true;
+        const dt = lastStep == null ? Infinity : t - lastStep;
+        if (dt >= minInterval) {
+          streak = dt <= maxInterval ? streak + 1 : 1;
+          lastStep = t;
+          if (streak === warmup) counted = warmup; // серия подтверждена — засчитываем и её начало
+          else if (streak > warmup) counted = 1;
+        }
+      } else if (above && smooth < mean) {
+        above = false;
+      }
+      return counted;
+    },
+  };
+}

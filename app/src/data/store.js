@@ -5,7 +5,8 @@ import { activeDuration, deviceTimeZone, MINUTE } from '../core/time.js';
 import { mergeOp, resolveConflict } from '../core/sync-policy.js';
 import { validateTrip } from '../core/editing.js';
 import { controllerPresent } from '../core/inspections.js';
-import { trackDistance } from '../core/geo.js';
+import { trackDistance, segmentDistances } from '../core/geo.js';
+import { tripSteps, strideFromHeight } from '../core/steps.js';
 import { STORES } from './db.js';
 import { BACKUP_TABLES } from '../core/backup.js';
 
@@ -194,11 +195,26 @@ export class Store {
       finishedAt: trip.finished_at ?? trip.started_at,
       activeMs: this.tripActiveMs(trip),
       timeZone: trip.time_zone,
-      segments: this.segmentsOf(trip.id).map((s) => ({ transport: s.transport_type, cost: s.cost, number: s.transport_number })),
+      segments: this.segmentsOf(trip.id).map((s) => ({ transport: s.transport_type, cost: s.cost, number: s.transport_number, distance: s.distance_meters })),
+      distance: trip.distance_meters ?? null,
+      walk: this.walkOf(trip),
       extraCost: trip.extra_cost || 0,
       controllers: this.inspectionsOf(trip.id).filter((i) => controllerPresent(i.outcome) === true).length,
       routeId: trip.route_id,
     };
+  }
+
+  /** Длина шага из настроек (рост) — для оценки шагов по расстоянию. */
+  stride() {
+    return strideFromHeight(this.meta('settings', {})?.heightCm);
+  }
+
+  /** Пешком в поездке: метры и шаги (с источником), или null, если пеших этапов нет. */
+  walkOf(trip, { now = this.clock(), distances = null } = {}) {
+    const walks = this.segmentsOf(trip.id).filter((s) => s.transport_type === 'walk');
+    if (!walks.length) return null;
+    const meters = walks.reduce((a, s) => a + (distances?.get(s.id) ?? s.distance_meters ?? 0), 0);
+    return { meters: meters || null, ...(tripSteps(walks, { stride: this.stride(), now, distances }) ?? { steps: null, source: null }) };
   }
 
   /** Сводки завершённых поездок (новые первыми). Пересчитываются только после изменения данных. */
@@ -255,10 +271,16 @@ export class Store {
     const now = this.clock();
     const track = this.trackOf(trip.id);
     await this.transact((tx) => {
-      const open = this.segmentsOf(trip.id).at(-1);
-      if (open && open.finished_at == null) {
-        tx.put('trip_segments', { ...open, finished_at: Math.max(end, open.started_at ?? end), updated_at: now });
-        tx.enqueue('trip_segments', open.id, 'upsert');
+      const segments = this.segmentsOf(trip.id).map((seg, i, all) => (i === all.length - 1 && seg.finished_at == null
+        ? { ...seg, finished_at: Math.max(end, seg.started_at ?? end) } : seg));
+      // Расстояние каждого этапа — из трека, если пользователь не вводил его сам
+      const dist = track.length > 1 ? segmentDistances(track, segments, end) : new Map();
+      for (const seg of segments) {
+        const prev = this.data.trip_segments.get(seg.id);
+        const next = seg.distance_meters == null && dist.get(seg.id) > 0 ? { ...seg, distance_meters: dist.get(seg.id) } : seg;
+        if (same(prev, next)) continue;
+        tx.put('trip_segments', { ...next, updated_at: now });
+        tx.enqueue('trip_segments', seg.id, 'upsert');
       }
       tx.put('trips', {
         ...trip, finished_at: end, pauses: session.pauses, status: 'completed', tracking_mode: session.mode,
@@ -299,12 +321,18 @@ export class Store {
       const segments = this.segmentsOf(tripId);
       const open = segments.at(-1);
       if (open && open.finished_at == null) {
-        tx.put('trip_segments', { ...open, finished_at: at, updated_at: now });
+        const closed = { ...open, finished_at: at };
+        const track = this.trackOf(tripId);
+        if (closed.distance_meters == null && track.length > 1) {
+          const d = segmentDistances(track, [closed], at).get(open.id);
+          if (d > 0) closed.distance_meters = d;
+        }
+        tx.put('trip_segments', { ...closed, updated_at: now });
         tx.enqueue('trip_segments', open.id, 'upsert');
       }
       tx.put('trip_segments', {
         id, trip_id: tripId, position: segments.length, transport_type, transport_number: trimOrNull(transport_number),
-        route_name: null, started_at: at, finished_at: null, cost, distance_meters: null,
+        route_name: null, started_at: at, finished_at: null, cost, distance_meters: null, steps: null,
         transfer_number: segments.length, comment: null, created_at: now, updated_at: now, deleted_at: null,
       });
       tx.enqueue('trip_segments', id, 'upsert');
@@ -312,6 +340,16 @@ export class Store {
       tx.enqueue('trips', tripId, 'upsert');
     });
     return id;
+  }
+
+  /** Шаги этапа по датчику движения (сохраняются периодически во время ходьбы). */
+  async setSegmentSteps(segmentId, steps) {
+    const seg = this.data.trip_segments.get(segmentId);
+    if (!seg || seg.deleted_at || seg.steps === steps) return;
+    await this.transact((tx) => {
+      tx.put('trip_segments', { ...seg, steps, updated_at: this.clock() });
+      tx.enqueue('trip_segments', segmentId, 'upsert');
+    });
   }
 
   /** «Контролёр»: на текущем этапе (или на поездке без этапов). */
@@ -364,7 +402,7 @@ export class Store {
     return {
       id: this.newId(), transport_type: template.transport_type || 'minibus',
       transport_number: template.transport_number || '', route_name: template.route_name || '',
-      started_at: null, finished_at: null, cost: template.cost || 0, distance_meters: null, comment: '', inspection: null,
+      started_at: null, finished_at: null, cost: template.cost || 0, distance_meters: null, steps: null, comment: '', inspection: null,
     };
   }
 
@@ -377,7 +415,7 @@ export class Store {
       segments: this.segmentsOf(trip.id).map((s) => ({
         id: s.id, transport_type: s.transport_type, transport_number: s.transport_number || '', route_name: s.route_name || '',
         started_at: s.started_at, finished_at: s.finished_at, cost: s.cost, distance_meters: s.distance_meters,
-        comment: s.comment || '', inspection: insp(inspections.find((i) => i.segment_id === s.id)),
+        steps: s.steps ?? null, comment: s.comment || '', inspection: insp(inspections.find((i) => i.segment_id === s.id)),
       })),
       trip_inspection: insp(inspections.find((i) => i.segment_id == null)),
     };
@@ -433,6 +471,7 @@ export class Store {
           transport_number: trimOrNull(sd.transport_number), route_name: trimOrNull(sd.route_name),
           started_at: sd.started_at ?? null, finished_at: sd.finished_at ?? null, cost: sd.cost || 0,
           distance_meters: sd.distance_meters ?? null, comment: trimOrNull(sd.comment),
+          steps: sd.transport_type === 'walk' ? sd.steps ?? null : null,
         };
         const live = old && !old.deleted_at ? old : null;
         if (!live || Object.keys(fields).some((k) => !same(live[k], fields[k]))) {

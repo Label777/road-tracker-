@@ -50,6 +50,25 @@ export function trackDistance(samples, opts = TRACK_DEFAULTS) {
   return total;
 }
 
+/**
+ * Расстояние по каждому этапу: точки трека от начала этапа до его конца (или до now).
+ * Точка на границе входит в оба этапа — между ними не теряется отрезок.
+ * @returns {Map<string, number>} id этапа → метры (только для этапов с временем начала)
+ */
+export function segmentDistances(track, segments, now = Date.now()) {
+  const out = new Map();
+  const sorted = [...track].sort((a, b) => a.t - b.t);
+  for (const seg of segments) {
+    if (seg.started_at == null) continue;
+    const end = seg.finished_at ?? now;
+    const pts = sorted.filter((p) => p.t >= seg.started_at && p.t <= end);
+    // последняя точка до начала этапа — чтобы считать от места пересадки
+    const before = pts[0]?.t === seg.started_at ? null : sorted.filter((p) => p.t < seg.started_at).at(-1);
+    out.set(seg.id, Math.round(trackDistance(before ? [before, ...pts] : pts)));
+  }
+  return out;
+}
+
 /** Остановки: точки в радиусе `radius` м дольше `minDuration` мс. */
 export function detectStops(samples, radius = 40, minDuration = 90_000) {
   const sorted = [...samples].sort((a, b) => a.t - b.t);

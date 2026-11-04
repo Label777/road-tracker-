@@ -38,6 +38,8 @@ export function toRemote(table, r, userId, store) {
         transport_number: r.transport_number, route_name: r.route_name, started_at: iso(r.started_at),
         finished_at: iso(r.finished_at), cost: r.cost, distance_meters: r.distance_meters,
         transfer_number: r.transfer_number, comment: r.comment,
+        // шаги — только если есть: так работает и с базой без миграции 03
+        ...(r.steps != null ? { steps: r.steps } : {}),
       };
     case 'inspections':
       return {

@@ -21,6 +21,7 @@ import { designView } from './views/design.js';
 import { openQuickAdd } from './views/quick-add.js';
 import { doView } from './views/do.js';
 import { shortcutsView } from './views/shortcuts.js';
+import { StepSensor } from './step-sensor.js';
 
 const ROUTES = [
   [/^#\/(home)?$/, dashboard],
@@ -96,7 +97,7 @@ async function boot() {
     back: () => (app.history.length > 1 ? history.back() : app.navigate('#/history')),
     toast,
     haptic,
-    settings: () => ({ gpsByDefault: false, finishHints: true, notifications: false, ...store.meta('settings', {}) }),
+    settings: () => ({ gpsByDefault: false, finishHints: true, notifications: false, stepSensor: false, heightCm: null, ...store.meta('settings', {}) }),
     saveSettings: (patch) => store.setMeta('settings', { ...app.settings(), ...patch }),
     confirm: (opts) => confirmSheet(app, opts),
     openSheet: (sheet) => openSheet(app, sheet),
@@ -105,6 +106,7 @@ async function boot() {
     quickAdd: (opts) => openQuickAdd(app, opts),
   };
   window.roadTracker = app; // для отладки и e2e-тестов
+  app.steps = new StepSensor(app);
 
   let pending = false;
   let deferred = false;
@@ -257,8 +259,8 @@ async function boot() {
   };
 
   // ----- подписки
-  store.subscribe(() => render());
-  tracker.subscribe(() => render());
+  store.subscribe(() => { app.steps.sync(); render(); });
+  tracker.subscribe(() => { app.steps.sync(); render(); });
   sync.subscribe(() => { if (app.view === profileView) render(); });
 
   // Таймеры поездки обновляются без перерисовки страницы
@@ -273,7 +275,10 @@ async function boot() {
   window.addEventListener('hashchange', route);
   window.addEventListener('online', () => sync.request());
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') tracker.flush();
+    if (document.visibilityState === 'hidden') {
+      tracker.flush();
+      app.steps.save();
+    }
     else {
       tracker.onVisible();
       sync.request();

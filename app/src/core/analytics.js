@@ -219,3 +219,24 @@ export function monthBudget(trips, budget, now, tz = deviceTimeZone()) {
     verdict,
   };
 }
+
+/**
+ * Пешком и расстояние за период: метры пешком, шаги (и есть ли среди них оценки),
+ * дни с ходьбой, расстояние всех поездок с GPS.
+ */
+export function movementTotals(trips) {
+  let walkMeters = 0, steps = 0, estimated = false, walkTrips = 0, gpsMeters = 0, gpsTrips = 0;
+  const days = new Set();
+  for (const t of trips) {
+    if (t.distance > 0) { gpsMeters += t.distance; gpsTrips++; }
+    if (!t.walk) continue;
+    walkTrips++;
+    walkMeters += t.walk.meters || 0;
+    if (t.walk.steps) {
+      steps += t.walk.steps;
+      if (t.walk.source !== 'sensor') estimated = true;
+      days.add(new Date(t.startedAt).toDateString());
+    }
+  }
+  return { walkMeters, steps, estimated, walkTrips, walkDays: days.size, gpsMeters, gpsTrips };
+}

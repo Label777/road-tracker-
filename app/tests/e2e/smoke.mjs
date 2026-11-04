@@ -46,6 +46,28 @@ try {
   // Этап через шторку
   // В пути: «Сменили транспорт?» — пешком → маршрутка
   check(await has('Сейчас: Пешком'), 'в пути видно текущий транспорт');
+  // Шаги: датчик движения (синтетические события ходьбы ~2 шага/с) и расстояние по треку
+  check(await has('Считать шаги датчиком'), 'пешком: предложение считать шаги датчиком');
+  await b.click('[data-action="enable-steps"]');
+  await b.waitFor('window.roadTracker.steps.segId', 'датчик шагов включён');
+  await b.evaluate(`new Promise((done) => {
+    let i = 0;
+    const id = setInterval(() => {
+      const z = 9.81 + 3 * Math.sin(2 * Math.PI * 2 * (i * 20) / 1000);
+      dispatchEvent(new DeviceMotionEvent('devicemotion', { accelerationIncludingGravity: { x: 0.1, y: 0.2, z } }));
+      if (++i >= 250) { clearInterval(id); done(); }
+    }, 20);
+  })`);
+  const counted = await b.evaluate('window.roadTracker.steps.count');
+  check(counted >= 4, `датчик насчитал шаги при ходьбе (${counted})`);
+  check((await b.evaluate('document.querySelector("[data-steps-live]")?.textContent')) === String(counted), 'шаги обновляются на экране без перерисовки');
+  await b.evaluate(`(async () => {
+    const a = window.roadTracker, id = a.tracker.session.tripId, t = a.store.segmentsOf(id)[0].started_at;
+    // 5 отрезков по ~11 м за 2 с — скорость пешехода
+    await a.store.addTrackPoints(id, [0, 1, 2, 3, 4, 5].map((k) => ({ t: t + 100 + k * 400, lat: 50.45 + k * 0.0001, lon: 30.52, acc: 5 })));
+  })()`);
+  await b.waitFor('/сейчас · \\d+\\s?м/.test(document.querySelector("main").innerText)', 'расстояние этапа');
+  check(true, 'расстояние пешего этапа считается по треку вживую');
   await b.screenshot(SHOTS, '2b-trip-change');
   await b.click('[data-action="change-to"][data-value="minibus"]');
   await b.waitFor('document.querySelector("#sheet [data-field=\\"pick.cost\\"]")', 'шторка пересадки');
@@ -59,6 +81,9 @@ try {
   check(await b.evaluate(`(() => { const a = window.roadTracker; const s = a.store.segmentsOf(a.tracker.session.tripId);
     return s.length === 2 && s[0].finished_at === s[1].started_at && s[1].transport_type === 'minibus' && s[1].cost === 2000; })()`),
     'пересадка: этап «Пешком» закрыт, начался «Маршрутка №720» за 20 ₴');
+  const walkSaved = await b.evaluate(`(() => { const a = window.roadTracker; const w = a.store.segmentsOf(a.tracker.session.tripId)[0];
+    return { steps: w.steps, d: w.distance_meters, sensor: a.steps.segId }; })()`);
+  check(walkSaved.steps === counted && walkSaved.d > 0 && !walkSaved.sensor, `при пересадке шаги и расстояние сохранены в пеший этап, датчик выключен (${JSON.stringify(walkSaved)})`);
 
   // Контролёр через шторку
   await b.click('[data-action="open-inspection"]');

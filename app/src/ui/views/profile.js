@@ -2,10 +2,11 @@
 // валюта, экспорт, приватность, установка на iPhone.
 import { html } from '../html.js';
 import { topBar, group, cell, primaryButton, secondaryButton } from '../components.js';
-import { ICONS, PLACE_KINDS, formatDateTime } from '../format.js';
+import { ICONS, PLACE_KINDS, TRANSPORT_ICONS, formatDateTime } from '../format.js';
 import { formatMoney } from '../../core/money.js';
 import { saveBackup, restoreBackup, download } from '../backup.js';
 import { budgetSheet } from './dashboard.js';
+import { motionSupported, requestMotion } from '../step-sensor.js';
 import { sheetHeader } from '../sheet.js';
 import { gpsPermission, notificationPermission, isStandalone } from '../permissions.js';
 
@@ -132,6 +133,12 @@ export const profileView = {
           ${cell({ icon: ICONS.lock, title: 'Доступ к геолокации', value: PERM[app.ui.gpsPermission ?? 'unknown'] })}
         `, app.ui.gpsPermission === 'denied' ? 'Разрешите геолокацию: Настройки iPhone → Safari → Геопозиция.' : 'Координаты пишутся только во время поездки и только пока сайт открыт.')}
 
+        ${group('Шаги', html`
+          ${motionSupported() ? cell({ icon: TRANSPORT_ICONS.walk, title: 'Считать шаги датчиком', sub: 'Пока идёте пешком и сайт открыт', toggle: settings.stepSensor, field: 'stepSensor' }) : ''}
+          <label class="cell"><span class="icon">${ICONS.profile}</span><span class="main"><span>Рост</span><small>Длина шага: ${String(store.stride()).replace('.', ',')} м</small></span>
+            <span class="cell-input"><input data-field="heightCm" inputmode="numeric" value="${settings.heightCm ?? ''}" placeholder="175" maxlength="3" autocomplete="off"><span>см</span></span></label>
+        `, 'Без датчика шаги оцениваются по расстоянию GPS и длине шага (≈0,415 × рост), а без GPS — по времени ходьбы. Оценки помечены знаком «≈».')}
+
         ${notif === 'unsupported' ? '' : group('Уведомления', html`
           ${cell({ icon: ICONS.bell, title: 'Уведомление о прибытии', toggle: settings.notifications && notif === 'granted', field: 'notifications' })}
           ${notif === 'denied' ? cell({ icon: ICONS.lock, title: 'Разрешение', value: PERM[notif] }) : ''}
@@ -172,6 +179,25 @@ export const profileView = {
     const key = el.dataset.field;
     if (key === 'restore') {
       if (type === 'change' && el.files?.[0]) restoreBackup(app, el.files[0]).finally(() => { el.value = ''; });
+      return false;
+    }
+    if (key === 'heightCm') {
+      if (type !== 'change') return false;
+      const cm = el.value.trim() === '' ? null : Math.round(Number(el.value));
+      if (cm != null && !(cm >= 120 && cm <= 230)) {
+        el.classList.add('invalid');
+        app.toast('Рост — от 120 до 230 см');
+        return false;
+      }
+      el.classList.remove('invalid');
+      app.saveSettings({ heightCm: cm });
+      return false;
+    }
+    if (key === 'stepSensor' && el.checked) {
+      requestMotion().then((ok) => {
+        app.saveSettings({ stepSensor: ok });
+        if (!ok) app.toast('Нет доступа к датчику движения. Разрешить: Настройки → Safari → «Движение и ориентация».');
+      });
       return false;
     }
     if (key === 'notifications' && el.checked) {

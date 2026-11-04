@@ -292,13 +292,22 @@ nav.tabs a.live::before {
   transition: transform var(--dur) var(--ease-spring), box-shadow var(--dur);
 }
 .start-orb:active { transform: scale(0.95); }
-.start-orb .ring { position: absolute; inset: -18px; pointer-events: none; }
-.start-orb .ring circle { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 9; opacity: 0.45; transform-origin: center; animation: spin 18s linear infinite; }
+/* Кольцо: явный размер и вращение всего SVG вокруг центра его блока. В Safari
+   transform-origin у элементов внутри SVG и inset у абсолютного SVG считаются иначе —
+   кольцо «гуляло» по орбите и смещалось влево-вверх. */
+.start-orb { --ring-gap: 18px; }
+.start-orb .ring {
+  position: absolute; top: calc(-1 * var(--ring-gap)); left: calc(-1 * var(--ring-gap));
+  width: calc(100% + 2 * var(--ring-gap)); height: calc(100% + 2 * var(--ring-gap));
+  overflow: visible; pointer-events: none; transform-origin: 50% 50%; animation: spin 18s linear infinite;
+}
+.start-orb .ring circle { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 9; opacity: 0.45; }
 .start-orb .label { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .start-orb .label strong { font: 800 1.25rem/1 var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; }
 .start-orb .label span { font: 600 0.82rem/1 var(--font-text); opacity: 0.72; }
 .start-orb.recording { background: radial-gradient(circle at 50% 40%, #1b2a21 0%, var(--surface-primary) 70%); color: var(--text-primary); box-shadow: 0 0 0 1px var(--border-strong), 0 18px 60px -20px var(--accent-glow); }
-.start-orb.recording .ring circle { opacity: 0.9; stroke-width: 1.6; stroke-dasharray: 4 6; animation-duration: 8s; }
+.start-orb.recording .ring { animation-duration: 8s; }
+.start-orb.recording .ring circle { opacity: 0.9; stroke-width: 1.6; stroke-dasharray: 4 6; }
 .start-orb.recording .label strong { font: var(--t-numeric-lg); letter-spacing: -0.02em; text-transform: none; color: var(--accent); }
 .start-orb.launch { animation: launch 520ms var(--ease-out); }
 .hero-sub { display: flex; gap: var(--s-2); align-items: center; }
@@ -579,7 +588,7 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 @media (max-height: 700px) {
   .start-orb { width: min(46vw, 172px); }
   .hero { gap: var(--s-4); padding: var(--s-6) 0 var(--s-4); }
-  .start-orb .ring { inset: -12px; }
+  .start-orb { --ring-gap: 12px; }
 }
 @media (max-width: 380px) {
   :root { --s-5: 16px; }
@@ -590,3 +599,11 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 @media (min-width: 640px) {
   main { padding-top: calc(var(--safe-top) + var(--s-4)); }
 }
+
+/* Поле в ячейке настроек (рост) */
+.cell-input { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font: var(--t-callout); }
+.cell-input input { width: 4.2em; padding: 6px 8px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface-elevated); color: var(--text-primary); font: 600 var(--t-callout-size, 1rem)/1.2 var(--font-numeric); text-align: right; }
+.cell-input input.invalid { border-color: var(--danger); }
+.trip-card .sub.movement { display: flex; align-items: center; gap: 4px; }
+.trip-card .sub.movement svg { width: 14px; height: 14px; flex: none; }
+.walk-stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }

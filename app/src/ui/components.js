@@ -4,7 +4,7 @@ import { html, raw } from './html.js';
 import { formatMoney } from '../core/money.js';
 import { formatDuration } from '../core/time.js';
 import {
-  DIRECTIONS, STATUS, TRANSPORT, ICONS, TRANSPORT_ICONS, formatDateTime, formatTime,
+  DIRECTIONS, STATUS, TRANSPORT, ICONS, TRANSPORT_ICONS, formatDateTime, formatTime, formatDistance, formatSteps,
 } from './format.js';
 
 const attrs = (o = {}) => raw(Object.entries(o).filter(([, v]) => v != null && v !== false)
@@ -66,12 +66,22 @@ export function tripCard(store, trip, { featured = false } = {}) {
       <span class="main">
         <span class="title">${DIRECTIONS[trip.direction]}</span>
         <span class="sub">${featured ? formatDateTime(trip.started_at) : timeRange}${segments.length ? html` · ${routeLine(segments)}` : ''}</span>
+        ${trip.status === 'completed' ? movementLine(store, trip) : ''}
       </span>
       <span class="end">
         <span class="t-num">${formatMoney(store.tripCost(trip))}</span>
         <span class="t-caption ${trip.status === 'suggested' ? 'warn' : ''}">${status}</span>
       </span>
     </a>`;
+}
+
+/** Расстояние и шаги поездки одной строкой (если есть что показать). */
+function movementLine(store, trip) {
+  const walk = store.walkOf(trip);
+  const parts = [];
+  if (trip.distance_meters > 0) parts.push(formatDistance(trip.distance_meters));
+  if (walk?.steps) parts.push(formatSteps(walk.steps, walk.source));
+  return parts.length ? html`<span class="sub movement">${TRANSPORT_ICONS.walk}${parts.join(' · ')}</span>` : '';
 }
 
 /** ExpenseCard: строка расхода с долей. */
