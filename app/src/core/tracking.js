@@ -75,6 +75,12 @@ export function reduce(state, event, newId = () => crypto.randomUUID()) {
         effects: [{ type: 'tripCancelled', tripId: s.tripId }, ...(s.mode === 'gps' ? [{ type: 'stopGps' }] : [])],
       };
     }
+    case 'enableGps': {
+      // Включить GPS в уже идущей ручной поездке.
+      if (state.status !== 'recording' || s.mode === 'gps') return { state, effects: [] };
+      const session = { ...s, mode: 'gps' };
+      return { state: { ...state, session }, effects: s.pausedSince ? [] : [{ type: 'startGps' }] };
+    }
     case 'gpsDenied': {
       // Отказ в геолокации: запись продолжается вручную, поездка не теряется.
       if (state.status !== 'recording' || s.mode !== 'gps') return { state, effects: [] };

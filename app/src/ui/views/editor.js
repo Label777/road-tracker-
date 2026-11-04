@@ -1,7 +1,11 @@
 // Редактор поездки: время, направление, шаблон, этапы (транспорт, номер, время, стоимость,
 // расстояние, контролёр), «без разбивки», комментарий. Также подтверждение автопоездок.
 import { html } from '../html.js';
-import { topBar, card } from '../components.js';
+import { topBar, primaryButton, secondaryButton, transportSelector } from '../components.js';
+import { html as _h } from '../html.js';
+
+/** Блок формы: заголовок + поверхность. */
+const card = (title, body) => _h`<section>${title ? _h`<h2 class="group-title">${title}</h2>` : ''}<div class="surface">${body}</div></section>`;
 import { formatMoney, parseMoney, moneyToInput } from '../../core/money.js';
 import { formatDuration } from '../../core/time.js';
 import { issueMessage } from '../../core/editing.js';
@@ -12,12 +16,12 @@ const opt = (value, label, selected) => html`<option value="${value}" ${selected
 
 function inspectionFields(insp, prefix) {
   return html`
-    <label class="toggle"><input type="checkbox" data-field="${prefix}.on" ${insp ? 'checked' : ''}><span>Отметить наблюдение контролёра</span></label>
+    <label class="switch-row"><span class="t-sub">Отметить наблюдение контролёра</span><input type="checkbox" class="switch" data-field="${prefix}.on" ${insp ? 'checked' : ''}></label>
     ${insp ? html`
-      <label>Что было<select data-field="${prefix}.outcome">${Object.entries(OUTCOME_LABELS).map(([k, v]) => opt(k, v, k === insp.outcome))}</select></label>
+      <label class="field"><span>Что было</span><select data-field="${prefix}.outcome">${Object.entries(OUTCOME_LABELS).map(([k, v]) => opt(k, v, k === insp.outcome))}</select></label>
       ${insp.outcome !== 'no_controller' ? html`
-        <label>Время<input type="datetime-local" data-field="${prefix}.observed_at" value="${toInputDateTime(insp.observed_at)}"></label>
-        <label>Где (станция, остановка)<input data-field="${prefix}.comment" value="${insp.comment}"></label>` : ''}
+        <label class="field"><span>Время</span><input type="datetime-local" data-field="${prefix}.observed_at" value="${toInputDateTime(insp.observed_at)}"></label>
+        <label class="field"><span>Где (станция, остановка)</span><input data-field="${prefix}.comment" value="${insp.comment}"></label>` : ''}
     ` : ''}`;
 }
 
@@ -25,32 +29,32 @@ function segmentCard(seg, i, count) {
   return html`
     <fieldset class="segment">
       <legend>Этап ${i + 1}</legend>
-      <div class="grid2">
-        <label>Транспорт<select data-field="seg.${i}.transport_type">${Object.entries(TRANSPORT).map(([k, v]) => opt(k, v, k === seg.transport_type))}</select></label>
-        <label>Номер<input data-field="seg.${i}.transport_number" value="${seg.transport_number}" placeholder="720" autocomplete="off"></label>
+      <div class="grid-2">
+        <label class="field"><span>Транспорт</span><select data-field="seg.${i}.transport_type">${Object.entries(TRANSPORT).map(([k, v]) => opt(k, v, k === seg.transport_type))}</select></label>
+        <label class="field"><span>Номер</span><input data-field="seg.${i}.transport_number" value="${seg.transport_number}" placeholder="720" autocomplete="off"></label>
       </div>
-      <label>Название линии / направление<input data-field="seg.${i}.route_name" value="${seg.route_name}"></label>
-      <div class="grid2 dt">
-        <label>Отправление<input type="datetime-local" data-field="seg.${i}.started_at" value="${toInputDateTime(seg.started_at)}"></label>
-        <label>Прибытие<input type="datetime-local" data-field="seg.${i}.finished_at" value="${toInputDateTime(seg.finished_at)}"></label>
+      <label class="field"><span>Название линии / направление</span><input data-field="seg.${i}.route_name" value="${seg.route_name}"></label>
+      <div class="stack-dt">
+        <label class="field"><span>Отправление</span><input type="datetime-local" data-field="seg.${i}.started_at" value="${toInputDateTime(seg.started_at)}"></label>
+        <label class="field"><span>Прибытие</span><input type="datetime-local" data-field="seg.${i}.finished_at" value="${toInputDateTime(seg.finished_at)}"></label>
       </div>
-      <div class="grid2">
-        <label>Стоимость, ₴<input inputmode="decimal" data-field="seg.${i}.cost" value="${moneyToInput(seg.cost)}" placeholder="0"></label>
-        <label>Расстояние, км<input inputmode="decimal" data-field="seg.${i}.km" value="${seg.distance_meters != null ? String(seg.distance_meters / 1000).replace('.', ',') : ''}"></label>
+      <div class="grid-2">
+        <label class="field"><span>Стоимость, ₴</span><input inputmode="decimal" data-field="seg.${i}.cost" value="${moneyToInput(seg.cost)}" placeholder="0"></label>
+        <label class="field"><span>Расстояние, км</span><input inputmode="decimal" data-field="seg.${i}.km" value="${seg.distance_meters != null ? String(seg.distance_meters / 1000).replace('.', ',') : ''}"></label>
       </div>
-      <label>Комментарий<input data-field="seg.${i}.comment" value="${seg.comment}"></label>
+      <label class="field"><span>Комментарий</span><input data-field="seg.${i}.comment" value="${seg.comment}"></label>
       ${TICKETED.has(seg.transport_type) ? inspectionFields(seg.inspection, `seg.${i}.insp`) : ''}
-      <div class="btn-row small">
-        <button class="btn small" data-action="seg-up" data-i="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
-        <button class="btn small" data-action="seg-down" data-i="${i}" ${i === count - 1 ? 'disabled' : ''}>↓</button>
-        <button class="btn small danger" data-action="seg-remove" data-i="${i}">Удалить этап</button>
+      <div class="btn-row" style="justify-content:flex-end;margin-top:var(--s-2)">
+        <button class="icon-btn" data-action="seg-up" data-i="${i}" aria-label="Поднять этап" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="icon-btn" data-action="seg-down" data-i="${i}" aria-label="Опустить этап" ${i === count - 1 ? 'disabled' : ''}>↓</button>
+        <button class="btn btn-danger btn-sm" data-action="seg-remove" data-i="${i}">Удалить этап</button>
       </div>
     </fieldset>`;
 }
 
 function issuesBlock(app, d) {
   const issues = app.store.draftIssues(d);
-  return html`<div id="editor-issues">${issues.map((i) => html`<p class="${i.blocking ? 'error' : 'warn'} small">${i.message ?? issueMessage(i)}</p>`)}</div>`;
+  return html`<div id="editor-issues">${issues.map((i) => html`<p class="t-caption ${i.blocking ? 'error' : 'warn'}">${issueMessage(i)}</p>`)}</div>`;
 }
 
 const totalOf = (d) => d.extra_cost + d.segments.reduce((a, s) => a + (s.cost || 0), 0);
@@ -67,6 +71,10 @@ export const editorView = {
     } else if (params.route) {
       const r = store.data.routes.get(params.route);
       app.ui.draft = r ? store.draftFromRoute(r) : store.emptyDraft();
+    } else if (app.ui.pendingDraft) {
+      // «Подробнее» из быстрого добавления: продолжаем с уже заполненным черновиком
+      app.ui.draft = app.ui.pendingDraft;
+      app.ui.pendingDraft = null;
     } else {
       app.ui.draft = store.emptyDraft();
     }
@@ -83,40 +91,40 @@ export const editorView = {
     return html`
       ${topBar(d.id ? 'Поездка' : 'Новая поездка', {
         back: params.back || '#/history',
-        actions: html`<button class="btn small primary" data-action="save">${suggested ? 'Подтвердить' : 'Сохранить'}</button>`,
+        actions: html`<button class="btn btn-primary btn-sm" data-action="save">${suggested ? 'Подтвердить' : 'Сохранить'}</button>`,
       })}
-      <div class="stack form">
-        ${suggested ? html`<p class="notice notice-warning">Поездка добавлена автоматически. Проверьте время и сохраните — или удалите, если поездки не было.</p>` : ''}
+      <div class="stack-lg reveal">
+        ${suggested ? html`<div class="notice warning"><div class="body t-callout">Поездка добавлена автоматически. Проверьте время и сохраните — или удалите, если поездки не было.</div></div>` : ''}
         ${card(null, html`
-          <label>Направление<select data-field="direction">${Object.entries(DIRECTIONS).map(([k, v]) => opt(k, v, k === d.direction))}</select></label>
-          <div class="grid2 dt">
-            <label>Начало<input type="datetime-local" data-field="started_at" value="${toInputDateTime(d.started_at)}"></label>
-            <label>Окончание<input type="datetime-local" data-field="finished_at" value="${toInputDateTime(d.finished_at)}"></label>
+          <label class="field"><span>Направление</span><select data-field="direction">${Object.entries(DIRECTIONS).map(([k, v]) => opt(k, v, k === d.direction))}</select></label>
+          <div class="stack-dt">
+            <label class="field"><span>Начало</span><input type="datetime-local" data-field="started_at" value="${toInputDateTime(d.started_at)}"></label>
+            <label class="field"><span>Окончание</span><input type="datetime-local" data-field="finished_at" value="${toInputDateTime(d.finished_at)}"></label>
           </div>
-          <p class="muted small" id="editor-duration">В пути: ${formatDuration(Math.max(0, d.finished_at - d.started_at))}</p>
+          <p class="t-caption" id="editor-duration">В пути: ${formatDuration(Math.max(0, d.finished_at - d.started_at))}</p>
           ${routes.length ? html`
-            <label>Шаблон маршрута<select data-field="route_id">${opt('', 'Без шаблона', !d.route_id)}${routes.map((r) => opt(r.id, r.name, r.id === d.route_id))}</select></label>
-            ${d.route_id && !d.segments.length ? html`<button class="btn small" data-action="fill-template">Заполнить этапы из шаблона</button>` : ''}` : ''}
+            <label class="field"><span>Шаблон маршрута</span><select data-field="route_id">${opt('', 'Без шаблона', !d.route_id)}${routes.map((r) => opt(r.id, r.name, r.id === d.route_id))}</select></label>
+            ${d.route_id && !d.segments.length ? html`<button class="btn btn-secondary btn-sm" data-action="fill-template">Заполнить этапы из шаблона</button>` : ''}` : ''}
         `)}
 
         ${card(`Этапы маршрута · пересадок: ${transfers}`, html`
           ${d.segments.map((s, i) => segmentCard(s, i, d.segments.length))}
-          <button class="btn" data-action="seg-add">${ICONS.plus} Добавить этап</button>
+          ${secondaryButton('Добавить этап', { action: 'seg-add', icon: ICONS.plus })}
         `)}
 
         ${card('Стоимость', html`
-          <label>Без разбивки по этапам, ₴<input inputmode="decimal" data-field="extra_cost" value="${moneyToInput(d.extra_cost)}" placeholder="0"></label>
-          <p class="total">Итого: <strong id="editor-total" class="mono">${formatMoney(totalOf(d))}</strong></p>
+          <label class="field"><span>Без разбивки по этапам, ₴</span><input class="numeric-input" inputmode="decimal" data-field="extra_cost" value="${moneyToInput(d.extra_cost)}" placeholder="0"></label>
+          <div class="row-between"><span class="t-sub">Итого</span><strong id="editor-total" class="t-num-lg">${formatMoney(totalOf(d))}</strong></div>
         `)}
 
         ${!d.segments.length ? card('Контролёр', inspectionFields(d.trip_inspection, 'tripinsp')) : ''}
 
-        ${card('Комментарий', html`<textarea data-field="comment" rows="2" placeholder="Например: пробка на мосту">${d.comment}</textarea>`)}
+        ${card('Комментарий', html`<textarea data-field="comment" rows="2" aria-label="Комментарий" placeholder="Например: пробка на мосту">${d.comment}</textarea>`)}
 
         ${track.length > 1 ? card('Маршрут по GPS', html`<div class="map" data-map-track="${d.id}"></div>`) : ''}
 
         ${issuesBlock(app, d)}
-        ${d.id ? html`<button class="link danger center" data-action="delete">Удалить поездку</button>` : ''}
+        ${d.id ? html`<button class="btn btn-danger" style="width:100%" data-action="delete">Удалить поездку</button>` : ''}
       </div>`;
   },
   mount(app, root) {
@@ -187,7 +195,7 @@ export const editorView = {
       }
     },
     delete: async (app) => {
-      if (!confirm('Удалить поездку?')) return;
+      if (!(await app.confirm({ title: 'Удалить поездку?', text: 'Этапы и отметки контролёров тоже будут удалены.', confirm: 'Удалить', danger: true }))) return;
       await app.store.deleteTrip(app.ui.draft.id);
       app.back();
     },

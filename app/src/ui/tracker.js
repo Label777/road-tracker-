@@ -76,7 +76,8 @@ export class Tracker {
         return undefined;
       case 'suggestFinish':
         this.notice = { kind: 'suggest', text: `Похоже, вы на месте: «${e.place}». Завершить поездку?` };
-        if (globalThis.Notification?.permission === 'granted' && document.visibilityState !== 'visible') {
+        if (this.store.meta('settings', {}).notifications && globalThis.Notification?.permission === 'granted'
+            && document.visibilityState !== 'visible') {
           try { new Notification('Road Tracker', { body: this.notice.text, tag: 'finish' }); } catch { /* iOS: только из PWA */ }
         }
         return undefined;
@@ -148,6 +149,8 @@ export class Tracker {
       this.buffer.push(sample);
       if (this.buffer.length >= 5) this.#flush();
     }
+    const settings = this.store.meta('settings', {});
+    if (settings.finishHints === false) return; // подсказки о прибытии выключены в настройках
     const places = this.store.live('locations').map((p) => ({ lat: p.latitude, lon: p.longitude, radius: p.radius, name: p.name }));
     this.send({ type: 'position', point: { lat: sample.lat, lon: sample.lon }, places, at: sample.t });
   }

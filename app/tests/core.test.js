@@ -8,6 +8,7 @@ import { distance, trackDistance, detectStops, gpsPolicy } from '../src/core/geo
 import {
   tripCost, tripTransfers, totalsOf, inInterval, costByDirection, costByTransport, dailySeries,
   monthComparison, forecast, compareRoutes, projectSavings, averageCommuteDayCost, dailyTotals,
+  monthToDateComparison, routeStats, segmentSignature,
 } from '../src/core/analytics.js';
 import { wilson, reliability, inspectionStats } from '../src/core/inspections.js';
 import { reduce, initialState, sessionActiveMs } from '../src/core/tracking.js';
@@ -162,6 +163,40 @@ describe('Аналитика', () => {
     assert.equal(f.rate, 1);
     assert.equal(f.projected, uah(2100)); // 300 ₴ потрачено + 18 будних дней × 100 ₴
   });
+  test('месяц к дате сравнивается с теми же днями прошлого месяца', () => {
+    const ts = [
+      trip(d(2026, 10, 2, 8), 40, { segments: [['metro', 2000]] }),   // 1–4 октября: 20 ₴
+      trip(d(2026, 10, 20, 8), 40, { segments: [['metro', 8000]] }),  // позже в октябре — не входит
+      trip(d(2026, 11, 3, 8), 40, { segments: [['metro', 3000]] }),
+    ];
+    const c = monthToDateComparison(ts, d(2026, 11, 4, 12), TZ);
+    assert.equal(c.current.cost, 3000);
+    assert.equal(c.previous.cost, 2000);
+    assert.equal(c.previousFull.cost, 10000);
+    assert.equal(c.costChange, 0.5);
+  });
+  test('прогноз не считает недели до первой поездки', () => {
+    const ts = [];
+    for (let day = d(2026, 10, 19); day <= d(2026, 11, 4); day = startOfDay(day + 26 * HOUR, TZ)) {
+      const wd = new Date(day + 12 * HOUR).getUTCDay();
+      if (wd === 0 || wd === 6) continue;
+      ts.push(trip(day + 8 * HOUR, 30, { segments: [['metro', 5000]] }));
+    }
+    const f = forecast(ts, 'month', d(2026, 11, 4, 12), { tz: TZ });
+    assert.equal(f.rate, 1);
+  });
+  test('сравнение реальных маршрутов', () => {
+    const ts = [
+      trip(d(2026, 11, 2, 8), 40, { segments: [['minibus', 2000, '720'], ['metro', 800]] }),
+      trip(d(2026, 11, 3, 8), 50, { segments: [['minibus', 2000, '720'], ['metro', 800]] }),
+      trip(d(2026, 11, 4, 8), 60, { segments: [['bus', 1500, '24']] }),
+    ];
+    const stats = routeStats(ts, (t) => ({ key: segmentSignature(t), label: segmentSignature(t) }));
+    assert.equal(stats[0].key, 'minibus:720>metro');
+    assert.equal(stats[0].count, 2);
+    assert.equal(stats[0].avgMs, 45 * MINUTE);
+    assert.equal(stats[0].avgCost, 2800);
+  });
   test('калькулятор экономии из ТЗ', () => {
     const r = compareRoutes({ name: 'А', minutes: 35, cost: uah(30) }, { name: 'Б', minutes: 50, cost: uah(18) });
     assert.equal(r.verdict, 'tradeoff');
@@ -243,6 +278,11 @@ describe('Машина состояний', () => {
       { type: 'position', point: { lat: 50.44, lon: 30.54 }, places: [work], at: at(41) },
     ]);
     assert.equal(r.effects.filter((e) => e.type === 'suggestFinish').length, 1);
+  });
+  test('GPS можно включить посреди ручной поездки', () => {
+    const r = run([{ type: 'start', direction: 'to_work', mode: 'manual', at: t0 }, { type: 'enableGps', at: at(3) }]);
+    assert.equal(r.state.session.mode, 'gps');
+    assert.ok(r.effects.some((e) => e.type === 'startGps'));
   });
   test('состояние сериализуется', () => {
     const r = run([{ type: 'start', direction: 'to_home', mode: 'gps', at: t0 }, { type: 'pause', at: at(5) }]);

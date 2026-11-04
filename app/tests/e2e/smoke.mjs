@@ -1,236 +1,190 @@
-// Сквозная проверка в настоящем Chrome (headless) через DevTools Protocol, без зависимостей.
-// Запуск: node tests/e2e/smoke.mjs [путь-к-chrome]   (сайт должен раздаваться на :8080)
-import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+// Сквозная проверка в настоящем Chrome (headless): все ключевые сценарии на размере iPhone.
+// Запуск: node tests/e2e/smoke.mjs [путь-к-chrome]   (сайт на :8080)
+import { launch, sleep } from './cdp.mjs';
 
-const CHROME = process.argv[2] || process.env.CHROME || 'google-chrome';
 const BASE = process.env.BASE_URL || 'http://localhost:8080/';
 const SHOTS = process.env.SHOTS_DIR || '';
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-const profile = mkdtempSync(join(tmpdir(), 'rt-chrome-'));
-const chrome = spawn(CHROME, [
-  '--headless=new', '--no-sandbox', '--disable-gpu', '--remote-debugging-port=9333', `--user-data-dir=${profile}`,
-  '--window-size=390,844', '--force-device-scale-factor=2', '--lang=ru-RU', 'about:blank',
-], { stdio: 'ignore' });
-
-let ws;
-let seq = 0;
-const pending = new Map();
-const errors = [];
-
-async function connect() {
-  for (let i = 0; i < 50; i++) {
-    try {
-      const list = await (await fetch('http://127.0.0.1:9333/json')).json();
-      const page = list.find((t) => t.type === 'page');
-      if (page) {
-        ws = new WebSocket(page.webSocketDebuggerUrl);
-        await new Promise((r) => ws.addEventListener('open', r, { once: true }));
-        ws.addEventListener('message', (m) => {
-          const msg = JSON.parse(m.data);
-          if (msg.id && pending.has(msg.id)) {
-            const { resolve, reject } = pending.get(msg.id);
-            pending.delete(msg.id);
-            if (msg.error) reject(new Error(msg.error.message));
-            else resolve(msg.result);
-          } else if (msg.method === 'Runtime.exceptionThrown') {
-            errors.push(msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text);
-          } else if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') {
-            errors.push(msg.params.args.map((a) => a.value ?? a.description).join(' '));
-          }
-        });
-        return;
-      }
-    } catch { /* ещё запускается */ }
-    await sleep(200);
-  }
-  throw new Error('Chrome не запустился');
-}
-
-const send = (method, params = {}) => new Promise((resolve, reject) => {
-  const id = ++seq;
-  pending.set(id, { resolve, reject });
-  ws.send(JSON.stringify({ id, method, params }));
-});
-
-async function evaluate(expr) {
-  const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
-  if (r.exceptionDetails) throw new Error(`${expr}\n→ ${r.exceptionDetails.exception?.description || r.exceptionDetails.text}`);
-  return r.result.value;
-}
-
-async function waitFor(expr, label, timeout = 5000) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    if (await evaluate(`!!(${expr})`)) return;
-    await sleep(100);
-  }
-  throw new Error(`Не дождались: ${label}`);
-}
-
-const click = (selector) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)});
-  if (!el) throw new Error('нет элемента ${selector.replace(/'/g, '')}'); el.click(); return true; })()`);
-const text = () => evaluate('document.querySelector("main").innerText');
-const go = async (hash) => { await evaluate(`location.hash = '${hash}'`); await sleep(250); };
-const setField = (selector, value) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)});
-  if (!el) throw new Error('нет поля ${selector.replace(/'/g, '')}');
-  el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('input', {bubbles: true}));
-  el.dispatchEvent(new Event('change', {bubbles: true})); return true; })()`);
-
-async function shot(name) {
-  if (!SHOTS) return;
-  mkdirSync(SHOTS, { recursive: true });
-  const { data } = await send('Page.captureScreenshot', { format: 'png' });
-  writeFileSync(join(SHOTS, `${name}.png`), Buffer.from(data, 'base64'));
-}
-
+const b = await launch({ chrome: process.argv[2] || process.env.CHROME || 'google-chrome' });
 const checks = [];
 function check(cond, label) {
   checks.push(label);
   if (!cond) throw new Error(`ПРОВАЛ: ${label}`);
   console.log(`ok  ${label}`);
 }
+const has = async (s) => (await b.text()).includes(s);
+const sheetText = () => b.evaluate('document.querySelector("#sheet")?.innerText || ""');
 
 try {
-  await connect();
-  await send('Runtime.enable');
-  await send('Page.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
-  await send('Emulation.setTimezoneOverride', { timezoneId: 'Europe/Kyiv' });
-  await send('Page.navigate', { url: `${BASE}#/home` });
-  await waitFor('document.querySelector(".start-btn")', 'главный экран');
-  check((await text()).includes('Начать поездку'), 'главный экран с кнопкой «Начать поездку»');
-  await shot('1-home');
+  await b.viewport(393, 852);
+  await b.send('Page.navigate', { url: `${BASE}#/home` });
+  await b.waitFor('document.querySelector(".start-orb")', 'главный экран');
+  check(await has('Старт'), 'главный экран: приветствие и кнопка «Старт»');
+  check(await has('Сегодня') && await has('Быстрые действия'), 'главный экран: показатели и быстрые действия');
+  await b.screenshot(SHOTS, '1-home');
 
-  // Быстрый старт → вкладка «Поездка»
-  await click('[data-action="quick-start"]');
-  await waitFor('location.hash === "#/trip" && document.querySelector("[data-timer]")', 'экран записи');
-  check((await text()).includes('Завершить'), 'запись поездки идёт');
+  // Старт → активная поездка
+  await b.click('[data-action="quick-start"]');
+  await b.waitFor('location.hash === "#/trip" && document.querySelector(".trip-clock")', 'экран поездки');
+  check(await has('Завершить'), 'запись поездки идёт');
 
-  // Этап: маршрутка 720, 20 ₴
-  await click('[data-action="open-board"]');
-  await waitFor('document.querySelector("form[data-action=board]")', 'форма этапа');
-  await evaluate(`document.querySelector('select[name=transport_type]').value = 'minibus'`);
-  await evaluate(`document.querySelector('input[name=transport_number]').value = '720'`);
-  await evaluate(`document.querySelector('input[name=cost]').value = '20'`);
-  await evaluate(`document.querySelector('form[data-action=board] button[type=submit]').click()`);
-  await waitFor('document.querySelector("main").innerText.includes("Маршрутка №720")', 'этап добавлен');
-  check(true, 'этап «Маршрутка №720» добавлен');
+  // Этап через шторку
+  await b.click('[data-action="open-board"]');
+  await b.waitFor('document.querySelector("#sheet [data-field=\\"board.cost\\"]")', 'шторка этапа');
+  await b.click('#sheet [data-action="board-transport"][data-value="minibus"]');
+  await b.setField('#sheet [data-field="board.transport_number"]', '720');
+  await b.setField('#sheet [data-field="board.cost"]', '20');
+  await b.click('#sheet [data-action="board-save"]');
+  await b.waitFor('document.querySelector("main").innerText.includes("Маршрутка №720")', 'этап добавлен');
+  check(true, 'этап «Маршрутка №720» добавлен через шторку');
 
-  // Контролёр
-  await evaluate(`document.querySelector('details.menu').open = true`);
-  await click('[data-action="inspection"][data-value="ticket_checked"]');
-  await waitFor('document.querySelector("main").innerText.includes("Билет проверили")', 'отметка контролёра');
+  // Контролёр через шторку
+  await b.click('[data-action="open-inspection"]');
+  await b.waitFor('document.querySelector("#sheet [data-action=inspection]")', 'шторка контролёра');
+  await b.click('#sheet [data-action="inspection"][data-value="ticket_checked"]');
+  await b.waitFor('document.querySelector("main").innerText.includes("Билет проверили")', 'отметка контролёра');
   check(true, 'контролёр отмечен на этапе');
-  await shot('2-trip');
-
-  // Перезагрузка посреди поездки: запись должна продолжиться
-  await send('Page.reload');
-  await waitFor('document.querySelector("[data-timer]")', 'восстановление после перезагрузки');
-  await go('#/trip');
-  check((await text()).includes('Маршрутка №720'), 'после перезагрузки поездка и этапы на месте');
-
-  // Двойное нажатие «Завершить» не ломает данные
-  await evaluate(`(() => { const b = document.querySelector('[data-action=finish]'); b.click(); b.click(); })()`);
-  await waitFor('!window.roadTracker.tracker.session', 'завершение');
-  await go('#/history');
-  await waitFor('document.querySelector("main").innerText.includes("20")', 'история');
-  const trips = await evaluate('window.roadTracker.store.liveTrips().length');
-  check(trips === 1, 'в истории ровно одна поездка');
-  const hist = await text();
-  check(hist.includes('Пт') || hist.includes('Пн') || hist.includes('Вс'), 'календарь отрисован');
-  await shot('3-history');
-
-  // Ручной ввод поездки задним числом
-  await go('#/new');
-  await waitFor('document.querySelector("[data-field=started_at]")', 'редактор');
-  await click('[data-action="seg-add"]');
-  await waitFor('document.querySelector("[data-field=\\"seg.0.cost\\"]")', 'этап в редакторе');
-  await setField('[data-field="seg.0.transport_type"]', 'metro');
-  await setField('[data-field="seg.0.cost"]', '8');
-  await setField('[data-field="extra_cost"]', '5,50');
-  check((await text()).includes('13,50'), 'итог пересчитывается при вводе (8 + 5,50)');
-  await setField('[data-field="comment"]', 'тест');
-  await shot('4-editor');
-  await click('[data-action="save"]');
-  await waitFor('window.roadTracker.store.liveTrips().length === 2', 'сохранение поездки');
-  check(true, 'поездка, введённая вручную, сохранена');
-
-  // Неверное время не сохраняется
-  await go('#/new');
-  await waitFor('document.querySelector("[data-field=finished_at]")', 'редактор');
-  const start = await evaluate('document.querySelector("[data-field=started_at]").value');
-  await setField('[data-field="finished_at"]', start);
-  check((await text()).includes('Окончание должно быть позже начала'), 'ошибка времени показана');
-  await click('[data-action="save"]');
   await sleep(300);
-  check((await evaluate('window.roadTracker.store.liveTrips().length')) === 2, 'поездка с неверным временем не сохранена');
+  await b.screenshot(SHOTS, '2-trip');
+
+  // Перезагрузка посреди поездки
+  await b.send('Page.reload');
+  await b.waitFor('window.roadTracker?.tracker?.session', 'восстановление после перезагрузки');
+  await b.go('#/trip');
+  check(await has('Маршрутка №720'), 'после перезагрузки поездка и этапы на месте');
+
+  // Двойное нажатие «Завершить»
+  await b.evaluate(`(() => { const x = document.querySelector('[data-action=finish]'); x.click(); x.click(); })()`);
+  await b.waitFor('!window.roadTracker.tracker.session', 'завершение');
+  check((await b.evaluate('window.roadTracker.store.liveTrips().length')) === 1, 'двойное «Завершить» — ровно одна поездка');
+
+  // Быстрое добавление: «как в прошлый раз» → Сохранить (2 действия)
+  await b.go('#/home');
+  await b.click('[data-action="quick-add"]');
+  await b.waitFor('document.querySelector("#sheet [data-action=qa-save]")', 'шторка добавления');
+  check((await sheetText()).includes('Как в прошлый раз'), 'быстрое добавление подставляет прошлую поездку');
+  await b.click('#sheet [data-action="qa-day"][data-value="yesterday"]');
+  await b.click('#sheet [data-action="qa-save"]');
+  await b.waitFor('window.roadTracker.store.liveTrips().length === 2', 'сохранение быстрой поездки');
+  check(true, 'поездка добавлена из шторки за два действия');
+
+  // Автодополнение маршрута в шторке
+  await b.click('[data-action="quick-add"]');
+  await b.waitFor('document.querySelector("#sheet [data-field=\\"qa.query\\"]")', 'шторка');
+  await b.setField('#sheet [data-field="qa.query"]', '72');
+  await b.waitFor('document.querySelector("#sheet [data-action=qa-pick]")', 'подсказки маршрута');
+  check((await sheetText()).includes('№720'), 'автодополнение находит маршрут №720');
+  await b.screenshot(SHOTS, '3-quick-add');
+  await b.click('#sheet [data-action="sheet-close"]');
+  await sleep(300);
+
+  // Полный редактор
+  await b.go('#/new');
+  await b.waitFor('document.querySelector("[data-field=started_at]")', 'редактор');
+  await b.click('[data-action="seg-add"]');
+  await b.waitFor('document.querySelector("[data-field=\\"seg.0.cost\\"]")', 'этап в редакторе');
+  await b.setField('[data-field="seg.0.transport_type"]', 'metro');
+  await b.setField('[data-field="seg.0.cost"]', '8');
+  await b.setField('[data-field="extra_cost"]', '5,50');
+  check(await has('13,50'), 'итог пересчитывается при вводе (8 + 5,50)');
+  await b.click('[data-action="save"]');
+  await b.waitFor('window.roadTracker.store.liveTrips().length === 3', 'сохранение');
+  check(true, 'поездка из полного редактора сохранена');
+
+  // Неверное время
+  await b.go('#/new');
+  await b.waitFor('document.querySelector("[data-field=finished_at]")', 'редактор');
+  const start = await b.evaluate('document.querySelector("[data-field=started_at]").value');
+  await b.setField('[data-field="finished_at"]', start);
+  check(await has('Окончание должно быть позже начала'), 'ошибка времени показана');
+  await b.click('[data-action="save"]');
+  await sleep(300);
+  check((await b.evaluate('window.roadTracker.store.liveTrips().length')) === 3, 'поездка с неверным временем не сохранена');
+
+  // История: календарь → шторка дня
+  await b.go('#/history');
+  await b.waitFor('document.querySelector(".cal-day.has")', 'календарь');
+  await b.click('.cal-day.has');
+  await b.waitFor('document.querySelector("#sheet .trip-card")', 'шторка дня');
+  check(true, 'выбор дня открывает подробности');
+  await b.screenshot(SHOTS, '4-day');
+  await b.click('#sheet [data-action="sheet-close"]');
+  await sleep(300);
 
   // Фильтры
-  await go('#/history');
-  await click('[data-action="history-mode"][data-value="list"]');
-  await click('[data-action="toggle-filters"]');
-  await waitFor('document.querySelector("[data-field=transports]")', 'фильтры');
-  await evaluate(`(() => { const c = document.querySelector('[data-field=transports][value=metro]'); c.checked = true; c.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+  await b.click('[data-action="history-mode"][data-value="list"]');
+  await b.click('[data-action="open-filters"]');
+  await b.waitFor('document.querySelector("#sheet [data-action=filter-toggle]")', 'фильтры');
+  await b.click('#sheet [data-action="filter-toggle"][data-group="transports"][data-value="metro"]');
   await sleep(200);
-  check((await text()).includes('Показано поездок: 1'), 'фильтр по транспорту: 1 поездка с метро');
-  await shot('5-filters');
+  check((await sheetText()).includes('Показать: 1'), 'фильтр по транспорту: 1 поездка с метро');
+  await b.click('#sheet [data-action="sheet-close"]');
+  await sleep(300);
+  check(await has('Фильтров: 1'), 'активный фильтр виден в истории');
 
-  // Аналитика и калькулятор
-  await go('#/analytics');
-  await waitFor('document.querySelector("#calc-result")', 'аналитика');
-  check((await text()).includes('Минута стоит 0,80'), 'калькулятор экономии: 0,80 ₴ за минуту');
-  check((await text()).includes('Недостаточно данных'), 'статистика контролёров честно говорит о малой выборке');
-  await shot('6-analytics');
+  // Аналитика
+  await b.go('#/analytics');
+  await b.waitFor('document.querySelector("#calc-result")', 'аналитика');
+  check(await has('Минута стоит 0,80'), 'калькулятор экономии: 0,80 ₴ за минуту');
+  check(await has('Недостаточно данных'), 'контролёры: честно о малой выборке');
+  await b.click('#expenses .col:not(.zero)');
+  check((await b.evaluate('!!document.querySelector("#expenses .chart-tip")')), 'подсказка графика по нажатию');
+  await b.screenshot(SHOTS, '5-analytics', { full: true });
 
-  // Шаблон маршрута и старт по нему
-  await go('#/route/new');
-  await waitFor('document.querySelector("[data-field=name]")', 'редактор маршрута');
-  await setField('[data-field="name"]', 'Утро');
-  await setField('[data-field="seg.0.transport_number"]', '720');
-  await setField('[data-field="seg.0.cost"]', '20');
-  await click('[data-action="save"]');
-  await waitFor('location.hash === "#/routes"', 'маршрут сохранён');
-  await go('#/trip');
-  await click('[data-action="start-template"]');
-  await waitFor('document.querySelector("main").innerText.includes("Маршрутка №720")', 'старт по шаблону');
+  // Шаблон и старт по нему
+  await b.go('#/route/new');
+  await b.waitFor('document.querySelector("[data-field=name]")', 'редактор маршрута');
+  await b.setField('[data-field="name"]', 'Утро');
+  await b.setField('[data-field="seg.0.transport_number"]', '720');
+  await b.setField('[data-field="seg.0.cost"]', '20');
+  await b.click('[data-action="save"]');
+  await b.waitFor('location.hash === "#/routes"', 'маршрут сохранён');
+  await b.go('#/trip');
+  await b.click('[data-action="start-template"]');
+  await b.waitFor('document.querySelector("main").innerText.includes("Маршрутка №720")', 'старт по шаблону');
   check(true, 'старт по шаблону открывает первый этап');
-  await click('[data-action="finish"]');
-  await waitFor('!window.roadTracker.tracker.session', 'завершение');
+  await b.click('[data-action="finish"]');
+  await b.waitFor('!window.roadTracker.tracker.session', 'завершение');
 
   // Место
-  await go('#/place/new-home');
-  await waitFor('document.querySelector("[data-field=latitude]")', 'редактор места');
-  await setField('[data-field="latitude"]', '50.45');
-  await setField('[data-field="longitude"]', '30.52');
-  await click('[data-action="save"]');
-  await waitFor('location.hash === "#/places"', 'место сохранено');
-  check((await text()).includes('Дом'), 'место «Дом» сохранено');
+  await b.go('#/place/new-home');
+  await b.waitFor('document.querySelector("[data-field=latitude]")', 'редактор места');
+  await b.setField('[data-field="latitude"]', '50.45');
+  await b.setField('[data-field="longitude"]', '30.52');
+  await b.click('[data-action="save"]');
+  await b.waitFor('location.hash === "#/places"', 'место сохранено');
+  check(await has('Дом'), 'место «Дом» сохранено');
 
-  // Профиль и очередь синхронизации
-  await go('#/profile');
-  check((await text()).includes('Облако не подключено') || (await text()).includes('Подключить'), 'профиль: облако не подключено, данные локальные');
-  const queue = await evaluate('window.roadTracker.store.queue().length');
-  check(queue > 0, `изменения ждут в очереди синхронизации (${queue})`);
-  await shot('7-profile');
+  // Настройки
+  await b.go('#/profile');
+  check(await has('Подключить облако'), 'профиль: облако не подключено, данные локальные');
+  await b.evaluate(`(() => { const s = document.querySelector('[data-field=gpsByDefault]'); s.checked = true; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+  await sleep(200);
+  check((await b.evaluate('window.roadTracker.settings().gpsByDefault')) === true, 'настройка GPS по умолчанию сохраняется');
+  await b.screenshot(SHOTS, '6-profile', { full: true });
+
+  // Шторка подтверждения
+  await b.go('#/design');
+  await b.click('[data-action="demo-confirm"]');
+  await b.waitFor('document.querySelector("#sheet [data-action=sheet-confirm]")', 'шторка подтверждения');
+  await b.click('#sheet [data-action="sheet-close"]');
+  await sleep(300);
+  check(!(await b.evaluate('!!document.querySelector("#sheet .sheet:not(.closing)")')), 'шторка подтверждения закрывается');
 
   // Данные переживают перезагрузку
-  await send('Page.reload');
-  await waitFor('window.roadTracker?.store', 'перезагрузка');
-  check((await evaluate('window.roadTracker.store.liveTrips().length')) === 3, 'после перезагрузки все 3 поездки на месте');
+  const queue = await b.evaluate('window.roadTracker.store.queue().length');
+  check(queue > 0, `изменения ждут в очереди синхронизации (${queue})`);
+  await b.send('Page.reload');
+  await b.waitFor('window.roadTracker?.store', 'перезагрузка');
+  check((await b.evaluate('window.roadTracker.store.liveTrips().length')) === 4, 'после перезагрузки все 4 поездки на месте');
 
-  const relevant = errors.filter((e) => !/Карта недоступна|unpkg|tile\.openstreetmap|ERR_|Failed to load resource/i.test(e));
+  const relevant = b.errors.filter((e) => !/Карта недоступна|unpkg|tile\.openstreetmap|ERR_|Failed to load resource/i.test(e));
   check(relevant.length === 0, `нет ошибок JavaScript${relevant.length ? `: ${relevant.join(' | ')}` : ''}`);
   console.log(`\nE2E: ${checks.length} проверок пройдено`);
 } catch (e) {
   console.error(e.message);
-  if (errors.length) console.error('Ошибки в консоли:', errors);
-  await shot('failure').catch(() => {});
+  if (b.errors.length) console.error('Ошибки в консоли:', b.errors);
+  await b.screenshot(SHOTS || '.', 'failure').catch(() => {});
   process.exitCode = 1;
 } finally {
-  ws?.close();
-  chrome.kill();
+  b.close();
 }

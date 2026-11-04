@@ -1,24 +1,58 @@
-// История: календарь месяца с итогами по дням, список по дням, фильтры.
+// История: календарь месяца (активность и расходы по дням), подробности дня в шторке,
+// список по дням, фильтры в шторке.
 import { html } from '../html.js';
-import { topBar, card, tripRow, metric, metrics, empty } from '../components.js';
+import { topBar, iconButton, segmented, tripCard, emptyState, metricCard, metricGrid, primaryButton, secondaryButton } from '../components.js';
 import { formatMoney, parseMoney, moneyToInput } from '../../core/money.js';
 import { formatDuration, formatHours, startOfDay, addMonths, periodInterval, addDays, zonedParts } from '../../core/time.js';
 import { totalsOf, inInterval, dailyTotals } from '../../core/analytics.js';
 import { emptyFilter, matchesFilter, activeFilterCount, monthGrid } from '../../core/editing.js';
 import { DIRECTIONS, TRANSPORT, ICONS, formatMonth, formatDayLong, toInputDate, fromInputDate } from '../format.js';
+import { sheetHeader } from '../sheet.js';
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 function filtered(app) {
   const f = app.ui.filter;
   const { store } = app;
-  return store.liveTrips().filter((t) => t.status === 'completed' && (!activeFilterCount(f) || matchesFilter(f, store.summary(t))));
+  const active = activeFilterCount(f);
+  return store.liveTrips().filter((t) => t.status === 'completed' && (!active || matchesFilter(f, store.summary(t))));
 }
 
-function dayHeader(store, day, trips) {
-  const cost = trips.reduce((a, t) => a + store.tripCost(t), 0);
-  const ms = trips.reduce((a, t) => a + store.tripActiveMs(t), 0);
-  return html`<h3 class="day-header"><span>${formatDayLong(day)}</span><span class="mono">${formatDuration(ms)} · ${formatMoney(cost)}</span></h3>`;
+function dayList(app, trips) {
+  return trips.length
+    ? html`<div>${trips.map((t) => tripCard(app.store, t))}</div>`
+    : emptyState({ text: 'В этот день поездок нет.', compact: true });
+}
+
+function daySheet(day) {
+  return {
+    label: formatDayLong(day),
+    render: (app) => {
+      const trips = filtered(app).filter((t) => startOfDay(t.started_at) === day);
+      const s = totalsOf(trips.map((t) => app.store.summary(t)));
+      return html`
+        ${sheetHeader(formatDayLong(day))}
+        ${trips.length ? metricGrid(
+          metricCard('В пути', formatDuration(s.activeMs)),
+          metricCard('Расходы', formatMoney(s.cost)),
+          metricCard('Поездок', String(s.trips), { hint: s.transfers ? `пересадок: ${s.transfers}` : '' }),
+          metricCard('Контролёров', String(s.controllers)),
+        ) : ''}
+        <div style="margin-top:var(--s-4)">${dayList(app, trips)}</div>
+        <div style="margin-top:var(--s-4)">${secondaryButton('Добавить поездку в этот день', { action: 'add-on-day', icon: ICONS.plus, 'data-day': day })}</div>`;
+    },
+    actions: {
+      'add-on-day': (app, el) => {
+        const d = app.store.emptyDraft();
+        const dayStart = +el.dataset.day;
+        d.started_at = dayStart + 8 * 3_600_000;
+        d.finished_at = d.started_at + 45 * 60_000;
+        app.ui.pendingDraft = d;
+        app.closeSheet();
+        app.navigate('#/new');
+      },
+    },
+  };
 }
 
 function calendar(app, trips) {
@@ -28,114 +62,98 @@ function calendar(app, trips) {
   const summaries = trips.map((t) => store.summary(t));
   const daily = dailyTotals(inInterval(summaries, grid));
   const totals = totalsOf(inInterval(summaries, grid));
+  const maxCost = Math.max(1, ...[...daily.values()].map((t) => t.cost));
   const today = startOfDay(Date.now());
-  const selected = app.ui.selectedDay ?? today;
-  const dayTrips = trips.filter((t) => startOfDay(t.started_at) === selected);
+  const selected = app.ui.selectedDay;
 
   return html`
-    ${card(null, html`
+    <section class="surface reveal">
       <div class="cal-head">
-        <button class="icon-btn" data-action="month" data-delta="-1" aria-label="Предыдущий месяц">${ICONS.back}</button>
-        <strong>${formatMonth(grid.start)}</strong>
-        <button class="icon-btn flip" data-action="month" data-delta="1" aria-label="Следующий месяц">${ICONS.back}</button>
+        ${iconButton(ICONS.back, 'Предыдущий месяц', { action: 'month' })}
+        <strong aria-live="polite">${formatMonth(grid.start)}</strong>
+        <button class="icon-btn" data-action="month" data-delta="1" aria-label="Следующий месяц" style="transform:scaleX(-1)">${ICONS.back}</button>
       </div>
-      <div class="cal">
-        ${WEEKDAYS.map((w) => html`<span class="cal-wd">${w}</span>`)}
+      <div class="cal" role="grid" aria-label="Календарь поездок">
+        ${WEEKDAYS.map((w) => html`<span class="cal-wd" aria-hidden="true">${w}</span>`)}
         ${grid.cells.map((day) => {
           if (day == null) return html`<span></span>`;
           const t = daily.get(day);
-          const label = t ? `${formatDayLong(day)}: поездок ${t.trips}, ${formatDuration(t.activeMs)}, ${formatMoney(t.cost)}, контролёров ${t.controllers}` : formatDayLong(day);
+          const label = t ? `${formatDayLong(day)}: поездок ${t.trips}, ${formatDuration(t.activeMs)}, ${formatMoney(t.cost)}${t.controllers ? `, контролёров ${t.controllers}` : ''}` : `${formatDayLong(day)}: поездок нет`;
           return html`
-            <button class="cal-day ${day === selected ? 'sel' : ''} ${day === today ? 'today' : ''}" data-action="select-day" data-day="${day}" aria-label="${label}">
+            <button class="cal-day ${t ? 'has' : ''} ${day === today ? 'today' : ''}" aria-pressed="${day === selected}" data-action="select-day" data-day="${day}" aria-label="${label}">
               <span>${zonedParts(day).day}</span>
-              ${t ? html`<span class="dots">${Array.from({ length: Math.min(t.trips, 3) }, () => html`<i></i>`)}${t.controllers ? html`<i class="ctrl"></i>` : ''}</span>
-                <span class="cal-cost">${Math.round(t.cost / 100) || ''}</span>` : ''}
+              ${t ? html`<span class="cal-cost">${Math.round(t.cost / 100)}</span>
+                <span class="heat" style="opacity:${(0.35 + 0.65 * (t.cost / maxCost)).toFixed(2)}"></span>
+                ${t.controllers ? html`<span class="ctrl" aria-hidden="true"></span>` : ''}` : ''}
             </button>`;
         })}
       </div>
-      ${metrics(metric(totals.trips, 'поездок'), metric(formatHours(totals.activeMs), 'в пути'), metric(formatMoney(totals.cost), 'расходы'))}
-    `)}
-    <section class="card">
-      ${dayHeader(store, selected, dayTrips)}
-      ${dayTrips.length ? html`<div class="list">${dayTrips.map((t) => tripRow(store, t))}</div>` : empty('Поездок нет')}
+    </section>
+    <section class="reveal">
+      ${metricGrid(
+        metricCard('Поездок', String(totals.trips)),
+        metricCard('В пути', formatHours(totals.activeMs)),
+        metricCard('Расходы', formatMoney(totals.cost)),
+        metricCard('Контролёров', String(totals.controllers)),
+      )}
+      <p class="t-caption" style="margin-top:var(--s-3)">Нажмите на день, чтобы увидеть поездки. Яркость полосы — расходы, оранжевая точка — встреча с контролёром.</p>
     </section>`;
 }
 
 function list(app, trips) {
-  const { store } = app;
-  if (!trips.length) return empty(activeFilterCount(app.ui.filter) ? 'Нет поездок по выбранным фильтрам.' : 'Записанные поездки появятся здесь.');
+  if (!trips.length) {
+    return emptyState({
+      icon: ICONS.history,
+      title: activeFilterCount(app.ui.filter) ? 'Ничего не найдено' : 'История пуста',
+      text: activeFilterCount(app.ui.filter) ? 'Измените или сбросьте фильтры.' : 'Записанные поездки появятся здесь.',
+      action: activeFilterCount(app.ui.filter) ? secondaryButton('Сбросить фильтры', { action: 'reset-filter', size: 'sm' }) : '',
+    });
+  }
   const groups = new Map();
   for (const t of trips) {
     const day = startOfDay(t.started_at);
     if (!groups.has(day)) groups.set(day, []);
     groups.get(day).push(t);
   }
-  return html`${[...groups].map(([day, ts]) => html`<section class="card">${dayHeader(store, day, ts)}<div class="list">${ts.map((t) => tripRow(store, t))}</div></section>`)}`;
+  return html`${[...groups].map(([day, ts]) => {
+    const cost = ts.reduce((a, t) => a + app.store.tripCost(t), 0);
+    return html`<section class="reveal">
+      <div class="section-title"><h2>${formatDayLong(day)}</h2><span class="t-caption">${formatMoney(cost)}</span></div>
+      ${dayList(app, ts)}</section>`;
+  })}`;
 }
 
-function filterPanel(app) {
-  const f = app.ui.filter;
-  const routes = app.store.live('routes');
-  const check = (group, value, label) => html`<label class="chip-check"><input type="checkbox" data-field="${group}" value="${value}" ${f[group].includes(value) ? 'checked' : ''}><span>${label}</span></label>`;
-  return card('Фильтры', html`
-    <div class="form">
-      <div class="grid2">
-        <label>С<input type="date" data-field="from" value="${toInputDate(f.from)}"></label>
-        <label>По<input type="date" data-field="to" value="${f.to != null ? toInputDate(addDays(f.to, -1)) : ''}"></label>
-      </div>
-      <p class="chips">${Object.entries(DIRECTIONS).map(([k, v]) => check('directions', k, v))}</p>
-      <p class="chips">${Object.entries(TRANSPORT).map(([k, v]) => check('transports', k, v))}</p>
-      <div class="grid2">
-        <label>Стоимость от, ₴<input inputmode="decimal" data-field="minCost" value="${moneyToInput(f.minCost)}"></label>
-        <label>до, ₴<input inputmode="decimal" data-field="maxCost" value="${moneyToInput(f.maxCost)}"></label>
-      </div>
-      <label>Контролёры<select data-field="controllers">
-        <option value="any" ${f.controllers === 'any' ? 'selected' : ''}>Все поездки</option>
-        <option value="met" ${f.controllers === 'met' ? 'selected' : ''}>Был контролёр</option>
-        <option value="notMet" ${f.controllers === 'notMet' ? 'selected' : ''}>Без контролёра</option>
-      </select></label>
-      <div class="grid2">
-        <label>Номер маршрута<input data-field="routeNumber" value="${f.routeNumber}" placeholder="720"></label>
-        <label>Шаблон<select data-field="routeId"><option value="">Любой</option>${routes.map((r) => html`<option value="${r.id}" ${r.id === f.routeId ? 'selected' : ''}>${r.name}</option>`)}</select></label>
-      </div>
-      <div class="btn-row"><button class="btn" data-action="reset-filter">Сбросить</button><button class="btn primary" data-action="toggle-filters">Готово</button></div>
-    </div>`);
-}
-
-export const historyView = {
-  tab: 'history',
-  render(app) {
-    app.ui.filter ??= emptyFilter();
-    app.ui.historyMode ??= 'calendar';
-    const { store } = app;
-    const trips = filtered(app);
-    const unconfirmed = store.liveTrips().filter((t) => t.status === 'suggested');
-    const n = activeFilterCount(app.ui.filter);
-    const mode = app.ui.historyMode;
-
+const filterSheet = {
+  label: 'Фильтры',
+  render: (app) => {
+    const f = app.ui.filter;
+    const routes = app.store.live('routes');
+    const toggle = (group, value, label) => html`<button class="chip" aria-pressed="${f[group].includes(value)}" data-action="filter-toggle" data-group="${group}" data-value="${value}">${label}</button>`;
     return html`
-      ${topBar('История', {
-        actions: html`
-          <button class="icon-btn ${n ? 'badge' : ''}" data-action="toggle-filters" aria-label="Фильтры" data-count="${n || ''}">${ICONS.filter}</button>
-          <a class="icon-btn" href="#/new" aria-label="Добавить поездку">${ICONS.plus}</a>`,
-      })}
+      ${sheetHeader('Фильтры', activeFilterCount(f) ? html`<button class="btn btn-ghost btn-sm" data-action="reset-filter">Сбросить</button>` : '')}
       <div class="stack">
-        ${unconfirmed.length ? card('Требуют подтверждения', html`<div class="list">${unconfirmed.map((t) => tripRow(store, t))}</div>`) : ''}
-        ${app.ui.showFilters ? filterPanel(app) : ''}
-        <div class="segmented">
-          <button class="${mode === 'calendar' ? 'on' : ''}" data-action="history-mode" data-value="calendar">Календарь</button>
-          <button class="${mode === 'list' ? 'on' : ''}" data-action="history-mode" data-value="list">Список</button>
+        <div class="grid-2">
+          <label class="field"><span>С</span><input type="date" data-field="from" value="${toInputDate(f.from)}"></label>
+          <label class="field"><span>По</span><input type="date" data-field="to" value="${f.to != null ? toInputDate(addDays(f.to, -1)) : ''}"></label>
         </div>
-        ${n ? html`<p class="muted small">Фильтров: ${n}. Показано поездок: ${trips.length}.</p>` : ''}
-        ${mode === 'calendar' ? calendar(app, trips) : list(app, trips)}
+        <div><span class="field-label">Направление</span><div class="chips" style="margin-top:6px">${Object.entries(DIRECTIONS).map(([k, v]) => toggle('directions', k, v))}</div></div>
+        <div><span class="field-label">Транспорт</span><div class="chips" style="margin-top:6px">${Object.entries(TRANSPORT).map(([k, v]) => toggle('transports', k, v))}</div></div>
+        <div class="grid-2">
+          <label class="field"><span>Стоимость от, ₴</span><input inputmode="decimal" data-field="minCost" value="${moneyToInput(f.minCost)}"></label>
+          <label class="field"><span>до, ₴</span><input inputmode="decimal" data-field="maxCost" value="${moneyToInput(f.maxCost)}"></label>
+        </div>
+        <div><span class="field-label">Контролёры</span><div style="margin-top:6px">${segmented({ any: 'Все', met: 'Был', notMet: 'Не было' }, f.controllers, { action: 'filter-controllers', label: 'Контролёры' })}</div></div>
+        <div class="grid-2">
+          <label class="field"><span>Номер маршрута</span><input data-field="routeNumber" value="${f.routeNumber}" placeholder="720"></label>
+          <label class="field"><span>Шаблон</span><select data-field="routeId"><option value="">Любой</option>${routes.map((r) => html`<option value="${r.id}" ${r.id === f.routeId ? 'selected' : ''}>${r.name}</option>`)}</select></label>
+        </div>
+        ${primaryButton(`Показать: ${filtered(app).length}`, { action: 'sheet-close', size: 'lg' })}
       </div>`;
   },
-  onInput(app, el, type) {
+  onInput: (app, el, type) => {
     const f = app.ui.filter;
     const key = el.dataset.field;
-    if (key === 'directions' || key === 'transports') {
-      f[key] = el.checked ? [...f[key], el.value] : f[key].filter((x) => x !== el.value);
-    } else if (key === 'from') f.from = fromInputDate(el.value);
+    if (key === 'from') f.from = fromInputDate(el.value);
     else if (key === 'to') f.to = el.value ? addDays(fromInputDate(el.value), 1) : null;
     else if (key === 'minCost' || key === 'maxCost') {
       const m = el.value.trim() ? parseMoney(el.value) : null;
@@ -143,18 +161,66 @@ export const historyView = {
       f[key] = m || null;
     } else if (key === 'routeId') f.routeId = el.value || null;
     else f[key] = el.value;
-    // Текстовые поля перерисовывают список по завершении ввода, чтобы не терять фокус
-    return el.tagName !== 'INPUT' || el.type === 'checkbox' || el.type === 'date' || type === 'change';
+    app.rerender();
+    return el.tagName === 'SELECT' || el.type === 'date' || type === 'change';
   },
   actions: {
-    'toggle-filters': (app) => { app.ui.showFilters = !app.ui.showFilters; app.rerender(); },
-    'reset-filter': (app) => { app.ui.filter = emptyFilter(); app.rerender(); },
-    'history-mode': (app, el) => { app.ui.historyMode = el.dataset.value; app.rerender(); },
-    month: (app, el) => {
-      app.ui.month = addMonths(app.ui.month ?? Date.now(), +el.dataset.delta);
-      app.ui.selectedDay = periodInterval('month', app.ui.month).start;
+    'filter-toggle': (app, el) => {
+      const { group, value } = el.dataset;
+      const f = app.ui.filter;
+      f[group] = f[group].includes(value) ? f[group].filter((x) => x !== value) : [...f[group], value];
+      app.haptic();
+      app.renderSheet();
       app.rerender();
     },
-    'select-day': (app, el) => { app.ui.selectedDay = +el.dataset.day; app.rerender(); },
+    'filter-controllers': (app, el) => { app.ui.filter.controllers = el.dataset.value; app.renderSheet(); app.rerender(); },
+    'reset-filter': (app) => { app.ui.filter = emptyFilter(); app.renderSheet(); app.rerender(); },
   },
 };
+
+export const historyView = {
+  tab: 'history',
+  render(app) {
+    app.ui.filter ??= emptyFilter();
+    app.ui.historyMode ??= 'calendar';
+    const trips = filtered(app);
+    const unconfirmed = app.store.liveTrips().filter((t) => t.status === 'suggested');
+    const n = activeFilterCount(app.ui.filter);
+    const mode = app.ui.historyMode;
+
+    return html`
+      ${topBar('История', {
+        large: true,
+        actions: html`
+          ${iconButton(ICONS.filter, n ? `Фильтры: ${n}` : 'Фильтры', { action: 'open-filters', count: n || '' })}
+          ${iconButton(ICONS.plus, 'Добавить поездку', { action: 'quick-add' })}`,
+      })}
+      <div class="stack-lg">
+        ${unconfirmed.length ? html`<section><div class="section-title"><h2>Требуют подтверждения</h2></div>${unconfirmed.map((t) => tripCard(app.store, t))}</section>` : ''}
+        <div class="stack">
+          ${segmented({ calendar: 'Календарь', list: 'Список' }, mode, { action: 'history-mode', label: 'Вид' })}
+          ${n ? html`<div class="row-between"><span class="t-caption">Фильтров: ${n} · поездок: ${trips.length}</span><button class="btn btn-ghost btn-sm" data-action="reset-filter">Сбросить</button></div>` : ''}
+        </div>
+        ${mode === 'calendar' ? calendar(app, trips) : list(app, trips)}
+      </div>`;
+  },
+  actions: {
+    'open-filters': (app) => app.openSheet(filterSheet),
+    'reset-filter': (app) => { app.ui.filter = emptyFilter(); app.rerender(); },
+    'history-mode': (app, el) => { app.ui.historyMode = el.dataset.value; app.haptic(); app.rerender(); },
+    month: (app, el) => {
+      app.ui.month = addMonths(app.ui.month ?? Date.now(), +(el.dataset.delta ?? -1));
+      app.ui.selectedDay = null;
+      app.rerender();
+    },
+    'select-day': (app, el) => {
+      const day = +el.dataset.day;
+      app.ui.selectedDay = day;
+      app.haptic();
+      app.rerender();
+      app.openSheet(daySheet(day));
+    },
+  },
+};
+
+export { periodInterval };

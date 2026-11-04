@@ -1,6 +1,6 @@
 // Финансовая аналитика, прогноз, калькулятор экономии.
 import { divideMoney, sumMoney } from './money.js';
-import { addDays, deviceTimeZone, isWeekend, periodInterval, startOfDay, addMonths } from './time.js';
+import { addDays, deviceTimeZone, isWeekend, periodInterval, startOfDay, addMonths, zonedParts } from './time.js';
 
 /**
  * Плоская поездка для аналитики.
@@ -83,6 +83,46 @@ export function averageCommuteDayCost(trips, tz = deviceTimeZone()) {
   return divideMoney(totalsOf(trips).cost, days.size);
 }
 
+/**
+ * Сравнение «месяц к дате»: с 1-го числа по сегодня против тех же дней прошлого месяца.
+ * Иначе в начале месяца неполный месяц сравнивается с полным (−80 % на 4-е число).
+ */
+export function monthToDateComparison(trips, now, tz = deviceTimeZone()) {
+  const cur = periodInterval('month', now, tz);
+  const dayIndex = zonedParts(now, tz).day;
+  const prevStart = addMonths(now, -1, tz);
+  const prevMonth = periodInterval('month', prevStart, tz);
+  const prevEnd = Math.min(addDays(prevMonth.start, dayIndex, tz), prevMonth.end);
+  const current = totalsOf(inInterval(trips, { start: cur.start, end: addDays(startOfDay(now, tz), 1, tz) }));
+  const previous = totalsOf(inInterval(trips, { start: prevMonth.start, end: prevEnd }));
+  const previousFull = totalsOf(inInterval(trips, prevMonth));
+  return {
+    current, previous, previousFull,
+    costChange: previous.cost > 0 ? (current.cost - previous.cost) / previous.cost : null,
+  };
+}
+
+/**
+ * Сравнение реальных маршрутов по истории: группировка по шаблону или по цепочке транспорта.
+ * @param {(t: TripSummary) => {key: string, label: string}} keyOf
+ */
+export function routeStats(trips, keyOf) {
+  const groups = new Map();
+  for (const t of trips) {
+    const { key, label } = keyOf(t);
+    if (!groups.has(key)) groups.set(key, { key, label, trips: [] });
+    groups.get(key).trips.push(t);
+  }
+  return [...groups.values()].map((g) => ({
+    key: g.key, label: g.label, count: g.trips.length,
+    avgMs: g.trips.reduce((a, t) => a + t.activeMs, 0) / g.trips.length,
+    avgCost: Math.round(g.trips.reduce((a, t) => a + tripCost(t), 0) / g.trips.length),
+  })).sort((a, b) => b.count - a.count);
+}
+
+export const segmentSignature = (t) => t.segments.filter((s) => s.transport !== 'walk')
+  .map((s) => (s.number ? `${s.transport}:${s.number}` : s.transport)).join('>') || 'none';
+
 export function monthComparison(trips, now, tz = deviceTimeZone()) {
   const cur = periodInterval('month', now, tz);
   const prev = periodInterval('month', addMonths(now, -1, tz), tz);
@@ -110,7 +150,9 @@ export function forecast(trips, unit, now, { tz = deviceTimeZone(), lookbackDays
   const period = periodInterval(unit, now, tz);
   const today = startOfDay(now, tz);
   const tomorrow = addDays(today, 1, tz);
-  const lookStart = addDays(today, -lookbackDays, tz);
+  // Не считаем «днями без поездок» недели до первой записи: иначе прогноз занижен для новых пользователей.
+  const firstTrip = trips.reduce((m, t) => Math.min(m, t.startedAt), Infinity);
+  const lookStart = Math.max(addDays(today, -lookbackDays, tz), Number.isFinite(firstTrip) ? startOfDay(firstTrip, tz) : -Infinity);
   const history = inInterval(trips, { start: lookStart, end: tomorrow });
   const days = new Set(history.map((t) => startOfDay(t.startedAt, tz)));
   if (days.size < minDays) return null;

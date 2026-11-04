@@ -73,6 +73,72 @@ export async function mapView(el, opts) {
   };
 }
 
+/**
+ * Живая карта активной поездки. Создаётся один раз на поездку и переносится между
+ * перерисовками экрана (Leaflet не пересоздаётся — карта не мигает и не сбрасывает масштаб).
+ */
+export class LiveMap {
+  constructor() {
+    this.el = document.createElement('div');
+    this.el.className = 'live-map';
+    this.map = null;
+    this.line = null;
+    this.dot = null;
+    this.places = null;
+    this.follow = true;
+    this.ready = null;
+  }
+
+  attach(parent) {
+    parent.append(this.el);
+    if (!this.ready) this.ready = this.#init();
+    else this.ready.then(() => this.map?.invalidateSize());
+    return this.ready;
+  }
+
+  async #init() {
+    let L;
+    try {
+      L = await loadLeaflet();
+    } catch (e) {
+      this.el.innerHTML = `<div class="no-gps"><p>${e.message}</p></div>`;
+      return;
+    }
+    this.L = L;
+    this.map = L.map(this.el, { zoomControl: false, attributionControl: true }).setView([50.4501, 30.5234], 13);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+    }).addTo(this.map);
+    this.line = L.polyline([], { color: ACCENT, weight: 5, opacity: 0.95, lineCap: 'round' }).addTo(this.map);
+    this.dot = L.circleMarker([0, 0], { radius: 8, color: '#0b0d10', weight: 3, fillColor: ACCENT, fillOpacity: 1 });
+    this.map.on('dragstart', () => { this.follow = false; });
+  }
+
+  /** @param {{lat:number, lon:number}[]} track @param {{lat:number, lon:number, radius:number}[]} places */
+  async update(track, places = []) {
+    await this.ready;
+    if (!this.map) return;
+    const L = this.L;
+    if (!this.places) {
+      this.places = places.map((p) => L.circle([p.lat, p.lon], { radius: p.radius, color: '#8d949e', weight: 1, fillOpacity: 0.06 }).addTo(this.map));
+    }
+    const pts = track.map((p) => [p.lat, p.lon]);
+    this.line.setLatLngs(pts);
+    if (!pts.length) return;
+    const last = pts.at(-1);
+    this.dot.setLatLng(last).addTo(this.map);
+    if (this.follow) {
+      if (pts.length > 1 && !this.fitted) { this.map.fitBounds(this.line.getBounds(), { padding: [40, 40], maxZoom: 16 }); this.fitted = true; }
+      else this.map.panTo(last, { animate: true });
+    }
+  }
+
+  recenter() {
+    this.follow = true;
+    this.fitted = false;
+  }
+}
+
 /** Поиск адреса (OpenStreetMap Nominatim). Возвращает {lat, lon, name, address} или null. */
 export async function geocode(query, near) {
   const params = new URLSearchParams({ q: query, format: 'jsonv2', limit: '1', 'accept-language': 'ru,uk' });

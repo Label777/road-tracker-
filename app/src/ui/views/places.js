@@ -1,8 +1,11 @@
 // Места (Дом, Работа, другие) и шаблоны маршрутов.
 import { html } from '../html.js';
-import { topBar, card, empty } from '../components.js';
+import { topBar, group, cell, emptyState, secondaryButton } from '../components.js';
+import { html as _h } from '../html.js';
+
+const card = (title, body) => _h`<section>${title ? _h`<h2 class="group-title">${title}</h2>` : ''}<div class="surface">${body}</div></section>`;
 import { formatMoney, parseMoney, moneyToInput } from '../../core/money.js';
-import { DIRECTIONS, TRANSPORT, PLACE_KINDS, ICONS } from '../format.js';
+import { DIRECTIONS, TRANSPORT, TRANSPORT_ICONS, PLACE_KINDS, ICONS } from '../format.js';
 import { mapView, geocode } from '../map.js';
 
 // ------------------------------------------------------------------ места
@@ -12,19 +15,19 @@ export const placesView = {
   render(app) {
     const places = app.store.live('locations').sort((a, b) => a.name.localeCompare(b.name));
     const byKind = (k) => places.find((p) => p.kind === k);
-    const row = (p) => html`<a class="row" href="#/place/${p.id}"><span class="row-icon">${p.kind === 'home' ? ICONS.home : ICONS.pin}</span>
-      <span class="row-main"><span class="row-title">${p.name}</span><span class="row-sub">${p.address || `${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}`} · ${p.radius} м</span></span>${ICONS.chevron}</a>`;
+    const placeCell = (p) => cell({
+      icon: p.kind === 'home' ? ICONS.home : p.kind === 'work' ? ICONS.work : ICONS.pin, title: p.name,
+      sub: `${p.address || `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}`} · ${p.radius} м`, href: `#/place/${p.id}`,
+    });
     return html`
       ${topBar('Места', { back: '#/profile' })}
-      <div class="stack">
-        ${card(null, html`<div class="list">
-          ${['home', 'work'].map((k) => (byKind(k) ? row(byKind(k)) : html`<a class="row accent" href="#/place/new-${k}">${ICONS.plus} Указать: ${PLACE_KINDS[k]}</a>`))}
-        </div>
-        <p class="muted small">Во время поездки с GPS сайт предложит завершить её, когда вы окажетесь в одном из мест.</p>`)}
-        ${card('Другие места', html`<div class="list">
-          ${places.filter((p) => p.kind === 'other').map(row)}
-          <a class="row accent" href="#/place/new-other">${ICONS.plus} Добавить место</a>
-        </div>`)}
+      <div class="stack-lg reveal">
+        ${group('Дом и работа', html`${['home', 'work'].map((k) => (byKind(k) ? placeCell(byKind(k))
+          : cell({ icon: k === 'home' ? ICONS.home : ICONS.work, title: `Указать: ${PLACE_KINDS[k]}`, href: `#/place/new-${k}` })))}`,
+        'Во время поездки с GPS сайт предложит завершить её, когда вы окажетесь в одном из мест.')}
+        ${group('Другие места', html`
+          ${places.filter((p) => p.kind === 'other').map(placeCell)}
+          ${cell({ icon: ICONS.plus, title: 'Добавить место', href: '#/place/new-other' })}`)}
       </div>`;
   },
 };
@@ -42,26 +45,26 @@ export const placeEditorView = {
   render(app) {
     const p = app.ui.place;
     return html`
-      ${topBar(p.id ? p.name : 'Новое место', { back: '#/places', actions: html`<button class="btn small primary" data-action="save">Сохранить</button>` })}
-      <div class="stack form">
+      ${topBar(p.id ? p.name : 'Новое место', { back: '#/places', actions: html`<button class="btn btn-primary btn-sm" data-action="save">Сохранить</button>` })}
+      <div class="stack-lg reveal">
         ${card(null, html`
           <div class="map picker" id="place-map"></div>
-          <form class="search" data-action="search"><input name="q" placeholder="Найти адрес" autocomplete="off"><button class="btn small" type="submit">Найти</button></form>
-          <button class="btn small" data-action="here">${ICONS.gps} Я здесь</button>
-          <p class="muted small" id="coords">Двигайте карту, чтобы поставить метку: ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}</p>
+          <form class="btn-row" style="margin:var(--s-3) 0" data-action="search"><input name="q" placeholder="Найти адрес" autocomplete="off" enterkeyhint="search" aria-label="Адрес"><button class="btn btn-secondary btn-sm" type="submit">Найти</button></form>
+          ${secondaryButton('Я здесь', { action: 'here', icon: ICONS.gps, size: 'sm' })}
+          <p class="t-caption" id="coords" style="margin-top:var(--s-2)">Двигайте карту, чтобы поставить метку: ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}</p>
         `)}
         ${card(null, html`
-          <label>Тип<select data-field="kind">${Object.entries(PLACE_KINDS).map(([k, v]) => html`<option value="${k}" ${k === p.kind ? 'selected' : ''}>${v}</option>`)}</select></label>
-          <label>Название<input data-field="name" value="${p.name}" required></label>
-          <label>Адрес<input data-field="address" value="${p.address}"></label>
-          <div class="grid2">
-            <label>Широта<input inputmode="decimal" data-field="latitude" value="${p.latitude}"></label>
-            <label>Долгота<input inputmode="decimal" data-field="longitude" value="${p.longitude}"></label>
+          <label class="field"><span>Тип</span><select data-field="kind">${Object.entries(PLACE_KINDS).map(([k, v]) => html`<option value="${k}" ${k === p.kind ? 'selected' : ''}>${v}</option>`)}</select></label>
+          <label class="field"><span>Название</span><input data-field="name" value="${p.name}" required></label>
+          <label class="field"><span>Адрес</span><input data-field="address" value="${p.address}"></label>
+          <div class="grid-2">
+            <label class="field"><span>Широта</span><input inputmode="decimal" data-field="latitude" value="${p.latitude}"></label>
+            <label class="field"><span>Долгота</span><input inputmode="decimal" data-field="longitude" value="${p.longitude}"></label>
           </div>
-          <label>Радиус, м: <output id="radius-out">${p.radius}</output><input type="range" min="100" max="2000" step="50" data-field="radius" value="${p.radius}"></label>
-          <p class="muted small">Точность определения места — около 100 м, поэтому радиус меньше не используется.</p>
+          <label class="field"><span>Радиус геозоны: <output id="radius-out">${p.radius}</output> м</span><input type="range" min="100" max="2000" step="50" data-field="radius" value="${p.radius}"></label>
+          <p class="t-caption">Точность определения места — около 100 м, поэтому радиус меньше не используется.</p>
         `)}
-        ${p.id ? html`<button class="link danger center" data-action="delete">Удалить место</button>` : ''}
+        ${p.id ? html`<button class="btn btn-danger" style="width:100%" data-action="delete">Удалить место</button>` : ''}
       </div>`;
   },
   async mount(app, root) {
@@ -106,7 +109,7 @@ export const placeEditorView = {
       }
     },
     delete: async (app) => {
-      if (!confirm('Удалить место?')) return;
+      if (!(await app.confirm({ title: 'Удалить место?', confirm: 'Удалить', danger: true }))) return;
       await app.store.deletePlace(app.ui.place.id);
       app.navigate('#/places');
     },
@@ -146,15 +149,12 @@ export const routesView = {
     const routes = app.store.live('routes').sort((a, b) => a.name.localeCompare(b.name));
     return html`
       ${topBar('Шаблоны маршрутов', { back: '#/profile' })}
-      <div class="stack">
-        ${card(null, html`
-          ${routes.length ? '' : empty('Например: «Утро: маршрутка 720 → метро». Шаблон ускоряет запись поездки и подсказывает следующий этап.')}
-          <div class="list">
-            ${routes.map((r) => html`<a class="row" href="#/route/${r.id}"><span class="row-main"><span class="row-title">${r.name}</span>
-              <span class="row-sub">${DIRECTIONS[r.direction]} · ${summary(r)}</span></span>
-              <span class="row-end mono">${formatMoney(r.segments.reduce((a, s) => a + s.cost, 0))}</span></a>`)}
-            <a class="row accent" href="#/route/new">${ICONS.plus} Новый маршрут</a>
-          </div>`)}
+      <div class="stack-lg reveal">
+        ${routes.length ? '' : emptyState({ icon: ICONS.route, title: 'Шаблонов пока нет', text: 'Например: «Утро: маршрутка 720 → метро». Шаблон запускает поездку в одно касание и подсказывает следующий этап.' })}
+        ${group(routes.length ? 'Ваши маршруты' : '', html`
+          ${routes.map((r) => cell({ icon: r.direction === 'to_home' ? ICONS.home : ICONS.work, title: r.name,
+            sub: `${DIRECTIONS[r.direction]} · ${summary(r)}`, value: formatMoney(r.segments.reduce((a, s) => a + s.cost, 0)), href: `#/route/${r.id}` }))}
+          ${cell({ icon: ICONS.plus, title: 'Новый маршрут', href: '#/route/new' })}`)}
       </div>`;
   },
 };
@@ -173,26 +173,26 @@ export const routeEditorView = {
   render(app) {
     const r = app.ui.route;
     const places = app.store.live('locations');
-    const placeSelect = (field, label) => html`<label>${label}<select data-field="${field}"><option value="">Не указано</option>
+    const placeSelect = (field, label) => html`<label class="field"><span>${label}</span><select data-field="${field}"><option value="">Не указано</option>
       ${places.map((p) => html`<option value="${p.id}" ${p.id === r[field] ? 'selected' : ''}>${p.name}</option>`)}</select></label>`;
     return html`
-      ${topBar(r.id ? r.name : 'Новый маршрут', { back: '#/routes', actions: html`<button class="btn small primary" data-action="save">Сохранить</button>` })}
-      <div class="stack form">
+      ${topBar(r.id ? r.name : 'Новый маршрут', { back: '#/routes', actions: html`<button class="btn btn-primary btn-sm" data-action="save">Сохранить</button>` })}
+      <div class="stack-lg reveal">
         ${card(null, html`
-          <label>Название<input data-field="name" value="${r.name}" placeholder="Утро: 720 + метро"></label>
-          <label>Направление<select data-field="direction">${Object.entries(DIRECTIONS).map(([k, v]) => html`<option value="${k}" ${k === r.direction ? 'selected' : ''}>${v}</option>`)}</select></label>
-          <div class="grid2">${placeSelect('origin_id', 'Откуда')}${placeSelect('destination_id', 'Куда')}</div>`)}
+          <label class="field"><span>Название</span><input data-field="name" value="${r.name}" placeholder="Утро: 720 + метро"></label>
+          <label class="field"><span>Направление</span><select data-field="direction">${Object.entries(DIRECTIONS).map(([k, v]) => html`<option value="${k}" ${k === r.direction ? 'selected' : ''}>${v}</option>`)}</select></label>
+          <div class="grid-2">${placeSelect('origin_id', 'Откуда')}${placeSelect('destination_id', 'Куда')}</div>`)}
         ${card('Этапы', html`
           ${r.segments.map((s, i) => html`
-            <div class="grid3 seg-row">
+            <div class="seg-row" style="display:grid;grid-template-columns:1.4fr .8fr .9fr 40px;gap:var(--s-2);margin-bottom:var(--s-2);align-items:center">
               <select data-field="seg.${i}.transport_type" aria-label="Транспорт">${Object.entries(TRANSPORT).map(([k, v]) => html`<option value="${k}" ${k === s.transport_type ? 'selected' : ''}>${v}</option>`)}</select>
               <input data-field="seg.${i}.transport_number" value="${s.transport_number}" placeholder="№" aria-label="Номер">
               <input inputmode="decimal" data-field="seg.${i}.cost" value="${moneyToInput(s.cost)}" placeholder="₴" aria-label="Стоимость">
-              <button class="icon-btn danger" data-action="seg-remove" data-i="${i}" aria-label="Удалить этап">×</button>
+              <button class="icon-btn" data-action="seg-remove" data-i="${i}" aria-label="Удалить этап">${ICONS.close}</button>
             </div>`)}
-          ${r.segments.length < 12 ? html`<button class="btn" data-action="seg-add">${ICONS.plus} Добавить этап</button>` : ''}
-          <p class="total">Типичная стоимость: <strong id="route-total" class="mono">${formatMoney(r.segments.reduce((a, s) => a + s.cost, 0))}</strong></p>`)}
-        ${r.id ? html`<button class="link danger center" data-action="delete">Удалить шаблон</button>` : ''}
+          ${r.segments.length < 12 ? secondaryButton('Добавить этап', { action: 'seg-add', icon: ICONS.plus }) : ''}
+          <div class="row-between" style="margin-top:var(--s-4)"><span class="t-sub">Типичная стоимость</span><strong id="route-total" class="t-num-lg">${formatMoney(r.segments.reduce((a, s) => a + s.cost, 0))}</strong></div>`)}
+        ${r.id ? html`<button class="btn btn-danger" style="width:100%" data-action="delete">Удалить шаблон</button>` : ''}
       </div>`;
   },
   onInput(app, el) {
@@ -219,7 +219,7 @@ export const routeEditorView = {
       }
     },
     delete: async (app) => {
-      if (!confirm('Удалить шаблон? Записанные поездки останутся.')) return;
+      if (!(await app.confirm({ title: 'Удалить шаблон?', text: 'Записанные поездки останутся.', confirm: 'Удалить', danger: true }))) return;
       await app.store.deleteRoute(app.ui.route.id);
       app.navigate('#/routes');
     },
