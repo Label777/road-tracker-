@@ -8,26 +8,58 @@ export const STORES = ['locations', 'routes', 'trips', 'trip_segments', 'inspect
  * @typedef {{loadAll(): Promise<Record<string, object[]>>, commit(writes: Write[]): Promise<void>, clear(): Promise<void>}} Backend
  */
 
+/**
+ * Версии схемы IndexedDB. Каждая миграция переводит базу с версии i на i + 1 и выполняется
+ * в транзакции обновления: если она упадёт, браузер откатит всё и оставит старую версию.
+ * Новые изменения формата — только новой миграцией в конце списка; старые не меняются.
+ */
+export const MIGRATIONS = [
+  // 0 → 1: хранилища записей
+  (db) => {
+    for (const s of STORES) {
+      if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'meta' ? 'key' : 'id' });
+    }
+  },
+  // 1 → 2: индексы по поездке — для выборки этапов, наблюдений и трека без полного чтения
+  (db, tx) => {
+    for (const s of ['trip_segments', 'inspections', 'track_points']) {
+      const os = tx.objectStore(s);
+      if (!os.indexNames.contains('trip_id')) os.createIndex('trip_id', 'trip_id');
+    }
+  },
+];
+export const DB_VERSION = MIGRATIONS.length;
+
+/** Применить миграции с oldVersion до текущей. */
+export function upgrade(db, tx, oldVersion) {
+  for (let v = oldVersion; v < MIGRATIONS.length; v++) MIGRATIONS[v](db, tx);
+}
+
 /** IndexedDB (браузер). */
 export class IdbBackend {
-  constructor(name = 'road-tracker') {
+  constructor(name = 'road-tracker', { onVersionChange = null } = {}) {
     this.name = name;
     this.dbPromise = null;
+    this.onVersionChange = onVersionChange;
   }
 
   open() {
     if (!this.dbPromise) {
       this.dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open(this.name, 1);
-        req.onupgradeneeded = () => {
+        const req = indexedDB.open(this.name, DB_VERSION);
+        req.onupgradeneeded = (ev) => upgrade(req.result, req.transaction, ev.oldVersion);
+        req.onsuccess = () => {
           const db = req.result;
-          for (const s of STORES) {
-            if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: s === 'meta' ? 'key' : 'id' });
-          }
+          // Другая вкладка открыла новую версию сайта: закрываем соединение, чтобы не мешать её обновлению.
+          db.onversionchange = () => {
+            db.close();
+            this.dbPromise = null;
+            this.onVersionChange?.();
+          };
+          resolve(db);
         };
-        req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
-        req.onblocked = () => reject(new Error('База данных открыта в другой вкладке со старой версией. Закройте её.'));
+        req.onblocked = () => reject(new Error('Сайт открыт в другой вкладке со старой версией. Закройте её и обновите страницу.'));
       });
     }
     return this.dbPromise;

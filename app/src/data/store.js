@@ -7,6 +7,7 @@ import { validateTrip } from '../core/editing.js';
 import { controllerPresent } from '../core/inspections.js';
 import { trackDistance } from '../core/geo.js';
 import { STORES } from './db.js';
+import { BACKUP_TABLES } from '../core/backup.js';
 
 export class StoreError extends Error {}
 
@@ -16,6 +17,8 @@ const trimOrNull = (s) => {
   return t === '' ? null : t;
 };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Индексы «поездка → записи»: этапы, наблюдения и точки трека ищутся без перебора всей базы.
+const BY_TRIP = ['trip_segments', 'inspections', 'track_points'];
 
 class Tx {
   constructor(store) {
@@ -54,7 +57,35 @@ export class Store {
     this.newId = newId;
     this.timeZone = timeZone;
     this.data = Object.fromEntries(STORES.map((s) => [s, new Map()]));
+    this.byTrip = Object.fromEntries(BY_TRIP.map((s) => [s, new Map()]));
     this.listeners = new Set();
+    /** Ревизия данных: растёт при каждом изменении; по ней кэшируются сводки. */
+    this.rev = 0;
+    this.memo = new Map();
+    this.memoRev = -1;
+  }
+
+  #indexAdd(name, row) {
+    let m = this.byTrip[name].get(row.trip_id);
+    if (!m) this.byTrip[name].set(row.trip_id, (m = new Map()));
+    m.set(row.id, row);
+  }
+
+  #indexRemove(name, row) {
+    const m = row && this.byTrip[name].get(row.trip_id);
+    if (!m) return;
+    m.delete(row.id);
+    if (!m.size) this.byTrip[name].delete(row.trip_id);
+  }
+
+  /** Значение, вычисленное один раз на ревизию данных. */
+  cached(key, fn) {
+    if (this.memoRev !== this.rev) {
+      this.memo.clear();
+      this.memoRev = this.rev;
+    }
+    if (!this.memo.has(key)) this.memo.set(key, fn());
+    return this.memo.get(key);
   }
 
   async load() {
@@ -62,6 +93,11 @@ export class Store {
     for (const s of STORES) {
       this.data[s] = new Map((all[s] || []).map((r) => [s === 'meta' ? r.key : r.id, r]));
     }
+    for (const name of BY_TRIP) {
+      this.byTrip[name] = new Map();
+      for (const r of this.data[name].values()) this.#indexAdd(name, r);
+    }
+    this.rev++;
     this.emit();
   }
 
@@ -81,9 +117,15 @@ export class Store {
     if (tx.writes.length) {
       await this.backend.commit(tx.writes);
       for (const w of tx.writes) {
-        if (w.delete) this.data[w.store].delete(w.key);
-        else this.data[w.store].set(w.store === 'meta' ? w.value.key : w.value.id, w.value);
+        const key = w.delete ? w.key : (w.store === 'meta' ? w.value.key : w.value.id);
+        if (this.byTrip[w.store]) this.#indexRemove(w.store, this.data[w.store].get(key));
+        if (w.delete) this.data[w.store].delete(key);
+        else {
+          this.data[w.store].set(key, w.value);
+          if (this.byTrip[w.store]) this.#indexAdd(w.store, w.value);
+        }
       }
+      this.rev++;
       this.emit();
     }
     return result;
@@ -100,21 +142,25 @@ export class Store {
   }
 
   liveTrips() {
-    return this.live('trips').sort((a, b) => b.started_at - a.started_at);
+    return this.cached('liveTrips', () => this.live('trips').sort((a, b) => b.started_at - a.started_at)).slice();
+  }
+
+  #ofTrip(name, tripId) {
+    return [...(this.byTrip[name].get(tripId)?.values() ?? [])];
   }
 
   segmentsOf(tripId, tx = null) {
-    const all = tx ? this.#merged(tx, 'trip_segments') : [...this.data.trip_segments.values()];
+    const all = tx ? this.#merged(tx, 'trip_segments') : this.#ofTrip('trip_segments', tripId);
     return all.filter((s) => s.trip_id === tripId && !s.deleted_at).sort((a, b) => a.position - b.position);
   }
 
   inspectionsOf(tripId, tx = null) {
-    const all = tx ? this.#merged(tx, 'inspections') : [...this.data.inspections.values()];
+    const all = tx ? this.#merged(tx, 'inspections') : this.#ofTrip('inspections', tripId);
     return all.filter((i) => i.trip_id === tripId && !i.deleted_at);
   }
 
   trackOf(tripId) {
-    return [...this.data.track_points.values()].filter((p) => p.trip_id === tripId).sort((a, b) => a.t - b.t);
+    return this.#ofTrip('track_points', tripId).sort((a, b) => a.t - b.t);
   }
 
   #merged(tx, name) {
@@ -155,8 +201,9 @@ export class Store {
     };
   }
 
+  /** Сводки завершённых поездок (новые первыми). Пересчитываются только после изменения данных. */
   completedSummaries() {
-    return this.liveTrips().filter((t) => t.status === 'completed').map((t) => this.summary(t));
+    return this.cached('summaries', () => this.liveTrips().filter((t) => t.status === 'completed').map((t) => this.summary(t)));
   }
 
   meta(key, fallback = null) {
@@ -526,7 +573,45 @@ export class Store {
   async clearAll() {
     await this.backend.clear();
     for (const s of STORES) this.data[s] = new Map();
+    for (const s of BY_TRIP) this.byTrip[s] = new Map();
+    this.rev++;
     this.emit();
+  }
+
+  // ------------------------------------------------------------------ резервная копия
+
+  /** Таблицы для резервной копии (без треков GPS). */
+  backupTables() {
+    return Object.fromEntries(BACKUP_TABLES.map((t) => [t, [...this.data[t].values()]]));
+  }
+
+  /**
+   * Восстановить из копии. Запись из файла заменяет локальную, только если она новее
+   * (как при синхронизации), поэтому повторное восстановление ничего не портит.
+   * Незавершённые поездки из копии пропускаются: запись идёт только на одном устройстве.
+   * Изменённые записи ставятся в очередь — при подключённом облаке уйдут и туда.
+   */
+  async importBackup({ tables, settings = null }) {
+    const result = { added: 0, updated: 0, unchanged: 0 };
+    const ongoing = new Set((tables.trips ?? []).filter((t) => t.status === 'active' || t.status === 'paused').map((t) => t.id));
+    await this.transact((tx) => {
+      for (const name of BACKUP_TABLES) {
+        for (const row of tables[name] ?? []) {
+          if (ongoing.has(name === 'trips' ? row.id : row.trip_id)) continue;
+          const local = tx.get(name, row.id);
+          if (local && (same(local, row) || resolveConflict(local, row) === 'local')) {
+            result.unchanged++;
+            continue;
+          }
+          result[local ? 'updated' : 'added']++;
+          const value = name === 'trips' ? { pauses: [], ...row } : row;
+          tx.put(name, value);
+          tx.enqueue(name, row.id, row.deleted_at ? 'delete' : 'upsert');
+        }
+      }
+      if (settings) tx.put('meta', { key: 'settings', value: { ...settings, ...this.meta('settings', {}) } });
+    });
+    return result;
   }
 
   // ------------------------------------------------------------------ для синхронизации

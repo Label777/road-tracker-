@@ -19,6 +19,8 @@ import { profileView } from './views/profile.js';
 import { placesView, placeEditorView, routesView, routeEditorView } from './views/places.js';
 import { designView } from './views/design.js';
 import { openQuickAdd } from './views/quick-add.js';
+import { doView } from './views/do.js';
+import { shortcutsView } from './views/shortcuts.js';
 
 const ROUTES = [
   [/^#\/(home)?$/, dashboard],
@@ -33,15 +35,27 @@ const ROUTES = [
   [/^#\/routes$/, routesView],
   [/^#\/route\/(?<id>[\w-]+)$/, routeEditorView],
   [/^#\/design$/, designView],
+  [/^#\/shortcuts$/, shortcutsView],
+  [/^#\/do\/(?<verb>\w+)(?:\?(?<query>.*))?$/, doView],
 ];
 
+// Пять вкладок; в центре — «Добавить» (шторка быстрого добавления), а во время записи — «Поездка».
 const TABS = [
   ['home', '#/home', 'Главная', ICONS.home],
-  ['trip', '#/trip', 'Поездка', ICONS.trip],
   ['history', '#/history', 'История', ICONS.history],
+  null,
   ['analytics', '#/analytics', 'Аналитика', ICONS.analytics],
   ['profile', '#/profile', 'Профиль', ICONS.profile],
 ];
+
+function tabsHtml(live) {
+  return TABS.map((t) => {
+    if (t) return `<a href="${t[1]}" data-tab="${t[0]}">${t[3]}<span>${t[2]}</span></a>`;
+    return live
+      ? `<a href="#/trip" data-tab="trip" class="center live">${ICONS.trip}<span>Поездка</span></a>`
+      : `<button type="button" class="center" data-nav="quick-add" aria-label="Добавить поездку">${ICONS.plus}<span>Добавить</span></button>`;
+  }).join('');
+}
 
 function loadConfig() {
   try {
@@ -55,7 +69,9 @@ function loadConfig() {
 
 async function boot() {
   const main = document.querySelector('main');
-  const store = new Store(new IdbBackend());
+  const store = new Store(new IdbBackend('road-tracker', {
+    onVersionChange: () => toast('Сайт обновился в другой вкладке', { action: 'Перезагрузить', run: () => location.reload(), duration: Infinity }),
+  }));
   try {
     await store.load();
   } catch (e) {
@@ -111,14 +127,31 @@ async function boot() {
       main.innerHTML = app.view.render(app, app.params).toString();
       app.view.mount?.(app, main, app.params);
       if (force) window.scrollTo(0, scrollY);
-      for (const a of document.querySelectorAll('nav.tabs a')) {
-        a.classList.toggle('on', a.dataset.tab === app.view.tab);
-        if (a.dataset.tab === app.view.tab) a.setAttribute('aria-current', 'page');
-        else a.removeAttribute('aria-current');
-        if (a.dataset.tab === 'trip') a.classList.toggle('live', !!tracker.session);
-      }
+      renderTabs();
     });
   }
+
+  const nav = document.querySelector('nav.tabs');
+  let navLive = null;
+  function renderTabs() {
+    const live = !!tracker.session;
+    if (live !== navLive) {
+      nav.innerHTML = tabsHtml(live);
+      navLive = live;
+    }
+    for (const a of nav.querySelectorAll('a')) {
+      const on = a.dataset.tab === app.view?.tab;
+      a.classList.toggle('on', on);
+      if (on) a.setAttribute('aria-current', 'page');
+      else a.removeAttribute('aria-current');
+    }
+  }
+  nav.addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-nav="quick-add"]')) {
+      haptic();
+      openQuickAdd(app);
+    }
+  });
 
   function route() {
     const hash = location.hash || '#/home';
@@ -254,25 +287,74 @@ async function boot() {
   window.addEventListener('pagehide', () => tracker.flush());
   trackKeyboard();
 
-  document.querySelector('nav.tabs').innerHTML = TABS.map(([tab, href, label, icon]) =>
-    `<a href="${href}" data-tab="${tab}">${icon}<span>${label}</span></a>`).join('');
-
   route();
   store.purgeTrackPoints(30).catch(() => {});
   sync.request();
 
-  if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
-  }
+  registerServiceWorker();
+}
+
+/** Офлайн-кэш и обновление: новая версия скачивается в фоне, страница предлагает перейти на неё. */
+function registerServiceWorker() {
+  const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (!('serviceWorker' in navigator) || !(location.protocol === 'https:' || local)) return;
+  let updating = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (updating) location.reload(); // только по нажатию «Обновить», не при первой установке
+  });
+  navigator.serviceWorker.register('./sw.js').then((reg) => {
+    const offer = (worker) => {
+      if (!navigator.serviceWorker.controller) return;
+      toast('Доступна новая версия сайта', {
+        action: 'Обновить',
+        duration: Infinity,
+        run: () => { updating = true; worker.postMessage({ type: 'skip-waiting' }); },
+      });
+    };
+    if (reg.waiting) offer(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w?.addEventListener('statechange', () => { if (w.state === 'installed') offer(w); });
+    });
+    // Установленный сайт может жить днями — проверяем обновление при каждом возвращении
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
+  }).catch(() => {});
 }
 
 let toastTimer;
-function toast(message) {
+let toastRun = null;
+/**
+ * Короткое сообщение внизу экрана; с action — с кнопкой (например, «Отменить»).
+ * @param {string} message @param {{action?: string, run?: () => any, duration?: number}} [opts]
+ */
+function toast(message, { action = null, run = null, duration } = {}) {
   const el = document.getElementById('toast');
-  el.textContent = message;
+  const text = document.createElement('span');
+  text.textContent = message;
+  el.replaceChildren(text);
+  toastRun = action ? run : null;
+  if (action) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = action;
+    el.append(btn);
+  }
+  el.classList.toggle('actionable', !!action);
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+  const ms = duration ?? (action ? 6000 : 3200);
+  if (Number.isFinite(ms)) toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
+
+document.getElementById('toast').addEventListener('click', async (ev) => {
+  if (!ev.target.closest('.toast-action') || !toastRun) return;
+  const run = toastRun;
+  toastRun = null;
+  document.getElementById('toast').classList.remove('show');
+  try { await run(); } catch (e) { toast(e.message); }
+});
 
 boot();

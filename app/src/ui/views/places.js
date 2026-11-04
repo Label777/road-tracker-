@@ -74,9 +74,13 @@ export const placeEditorView = {
       onMove: (c) => {
         p.latitude = +c.lat.toFixed(6);
         p.longitude = +c.lon.toFixed(6);
-        root.querySelector('#coords').textContent = `Метка: ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}`;
-        root.querySelector('[data-field=latitude]').value = p.latitude;
-        root.querySelector('[data-field=longitude]').value = p.longitude;
+        // Карта могла пережить перерисовку или уход с экрана — обновляем только живые поля
+        const coords = root.querySelector('#coords');
+        if (coords) coords.textContent = `Метка: ${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}`;
+        const lat = root.querySelector('[data-field=latitude]');
+        const lon = root.querySelector('[data-field=longitude]');
+        if (lat) lat.value = p.latitude;
+        if (lon) lon.value = p.longitude;
       },
     });
     app.ui.placeMap = ctl;

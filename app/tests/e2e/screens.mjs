@@ -6,7 +6,7 @@ const BASE = process.env.BASE_URL || 'http://localhost:8080/';
 const DIR = process.env.SHOTS_DIR || 'screens';
 const SIZES = { se: [375, 667], i15: [393, 852], max: [430, 932] };
 const ONLY = process.env.SIZES ? process.env.SIZES.split(',') : Object.keys(SIZES);
-const SCREENS = (process.env.SCREENS || 'home,trip-idle,trip-live,new,history,day,analytics,profile,places,design').split(',');
+const SCREENS = (process.env.SCREENS || 'home,home-fold,trip-live,new,history,day,analytics,profile,shortcuts,places,design').split(',');
 
 const b = await launch();
 try {
@@ -19,7 +19,7 @@ try {
     await b.viewport(...SIZES[size]);
     for (const screen of SCREENS) {
       const hash = {
-        home: '#/home', 'trip-idle': '#/trip', 'trip-live': '#/trip', new: '#/history', history: '#/history',
+        home: '#/home', 'home-fold': '#/home', 'trip-live': '#/trip', shortcuts: '#/shortcuts', new: '#/history', history: '#/history',
         day: '#/history', analytics: '#/analytics', profile: '#/profile', places: '#/places', design: '#/design',
       }[screen];
       await b.evaluate('window.roadTracker.ui.sheet && window.roadTracker.closeSheet()');
@@ -30,12 +30,13 @@ try {
         await b.evaluate(`window.roadTracker.store.appendLiveSegment(window.roadTracker.tracker.session.tripId, { transport_type: 'minibus', transport_number: '720', cost: 2000 }, Date.now())`);
         await sleep(300);
       }
-      if (screen === 'trip-idle' && (await b.evaluate('!!window.roadTracker.tracker.session'))) {
+      if (screen !== 'trip-live' && (await b.evaluate('!!window.roadTracker.tracker.session'))) {
         await b.evaluate(`window.roadTracker.tracker.send({ type: 'cancel' })`);
         await sleep(300);
+        await b.go(hash);
       }
       if (screen === 'new') {
-        await b.evaluate(`document.querySelector('[data-action="quick-add"]')?.click()`);
+        await b.evaluate(`document.querySelector('nav.tabs [data-nav="quick-add"]')?.click()`);
         await sleep(500);
       }
       if (screen === 'day') {
@@ -43,10 +44,10 @@ try {
         await sleep(500);
       }
       await sleep(700); // анимации появления
-      await b.screenshot(DIR, `${size}-${screen}`, { full: !['new', 'day'].includes(screen) });
+      await b.screenshot(DIR, `${size}-${screen}`, { full: !['new', 'day', 'home-fold'].includes(screen) });
     }
   }
-  const errs = b.errors.filter((e) => !/unpkg|tile\.openstreetmap|Карта недоступна|Failed to load resource|ERR_/i.test(e));
+  const errs = b.errors.filter((e) => !/tile\.openstreetmap|Failed to load resource|ERR_/i.test(e));
   if (errs.length) { console.error('Ошибки JS:', errs); process.exitCode = 1; }
   console.log('готово');
 } finally {

@@ -93,6 +93,11 @@ export const ICONS = {
   lock: svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>', 18),
   coin: svg('<circle cx="12" cy="12" r="9"/><path d="M9 9h5a2 2 0 010 4h-4a2 2 0 000 4h5M12 6v2M12 16v2"/>', 18),
   target: svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>', 18),
+  bolt: svg('<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'),
+  upload: svg('<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>', 18),
+  copy: svg('<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 00-2-2H5a2 2 0 00-2 2v9a2 2 0 002 2h3"/>', 18),
+  check: svg('<path d="M5 12l5 5 9-10"/>', 18),
+  link: svg('<path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/>', 18),
   trash: svg('<path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3"/>', 18),
   logo: raw(`<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect width="24" height="24" rx="7" fill="#2ef07a"/><path d="M8 19L11 5M16 19L13 5" stroke="#04140a" stroke-width="2.2" stroke-linecap="round"/><path d="M12 7.5v2M12 12v2M12 16.5v1.5" stroke="#04140a" stroke-width="1.6" stroke-linecap="round"/></svg>`),
 };

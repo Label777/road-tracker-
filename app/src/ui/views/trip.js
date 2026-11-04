@@ -12,42 +12,7 @@ import {
 import { LiveMap } from '../map.js';
 import { sheetHeader } from '../sheet.js';
 import { frequentCosts, routeNumbers } from '../suggest.js';
-import { suggestedDirection } from './dashboard.js';
-
-const routeSummary = (r) => r.segments.map((s) => (s.transport_number ? `${TRANSPORT[s.transport_type]} ${s.transport_number}` : TRANSPORT[s.transport_type])).join(' → ');
-
-// ------------------------------------------------------------------ ожидание старта
-
-function idle(app) {
-  const routes = app.store.live('routes').sort((a, b) => a.name.localeCompare(b.name));
-  const dir = app.ui.startDirection ?? suggestedDirection();
-  const gps = app.ui.startGps ?? app.settings().gpsByDefault;
-  return html`
-    ${topBar('Поездка', { large: true })}
-    <div class="stack-lg reveal">
-      <div class="stack">
-        ${segmented(DIRECTIONS, dir, { action: 'set-start-direction', label: 'Направление' })}
-        <label class="switch-row surface" style="padding:var(--s-2) var(--s-4)">
-          <span><span class="t-sub">Записывать маршрут по GPS</span><br><span class="t-caption">Пока сайт открыт — экран не погаснет</span></span>
-          <input type="checkbox" class="switch" data-field="startGps" ${gps ? 'checked' : ''}>
-        </label>
-        ${primaryButton(html`Начать поездку`, { action: 'start', size: 'lg', icon: ICONS.play })}
-      </div>
-      ${routes.length ? html`<section>
-        ${sectionTitle('По шаблону', html`<a href="#/routes">Изменить</a>`)}
-        <div class="stack">${routes.map((r) => html`
-          <button class="trip-card featured" data-action="start-template" data-id="${r.id}">
-            <span class="glyph ${r.direction === 'to_work' ? 'work' : ''}">${r.direction === 'to_home' ? ICONS.home : ICONS.work}</span>
-            <span class="main"><span class="title">${r.name}</span><span class="sub">${routeSummary(r)}</span></span>
-            <span class="end t-num">${formatMoney(r.segments.reduce((a, s) => a + s.cost, 0))}</span>
-          </button>`)}</div>
-      </section>` : html`<section>${emptyState({
-        icon: ICONS.route, title: 'Шаблоны ускоряют запись',
-        text: 'Сохраните обычный маршрут — например, «маршрутка 720 → метро» — и начинайте поездку в одно касание.',
-        action: html`<a class="btn btn-secondary btn-sm" href="#/route/new">Создать шаблон</a>`,
-      })}</section>`}
-    </div>`;
-}
+import { finishTrip, finishedText } from '../actions.js';
 
 // ------------------------------------------------------------------ запись
 
@@ -205,7 +170,12 @@ const directionSheet = {
 export const tripView = {
   tab: 'trip',
   render(app) {
-    return app.tracker.session ? recording(app) : idle(app);
+    // Старт — на главной; без записи этот экран не нужен
+    if (!app.tracker.session) {
+      queueMicrotask(() => location.replace('#/home'));
+      return '';
+    }
+    return recording(app);
   },
   mount(app, root) {
     const slot = root.querySelector('[data-live-map]');
@@ -218,41 +188,14 @@ export const tripView = {
     const places = app.store.live('locations').map((p) => ({ lat: p.latitude, lon: p.longitude, radius: p.radius }));
     lm.update(app.store.trackOf(s.tripId), places);
   },
-  onInput(app, el) {
-    if (el.dataset.field === 'startGps') {
-      app.ui.startGps = el.checked;
-      app.haptic();
-    }
-    return false;
-  },
   actions: {
-    'set-start-direction': (app, el) => { app.ui.startDirection = el.dataset.value; app.haptic(); app.rerender(); },
-    start: async (app) => {
-      app.haptic('success');
-      await app.tracker.send({
-        type: 'start', direction: app.ui.startDirection ?? suggestedDirection(),
-        mode: (app.ui.startGps ?? app.settings().gpsByDefault) ? 'gps' : 'manual',
-      });
-    },
-    'start-template': async (app, el) => {
-      const route = app.store.data.routes.get(el.dataset.id);
-      app.haptic('success');
-      await app.tracker.send({ type: 'start', direction: route.direction, mode: (app.ui.startGps ?? app.settings().gpsByDefault) ? 'gps' : 'manual' });
-      const id = app.tracker.session?.tripId;
-      if (!id) return;
-      await app.store.updateTrip(id, { route_id: route.id });
-      const first = route.segments[0];
-      if (first) await app.store.appendLiveSegment(id, first, Date.now());
-    },
     'enable-gps': (app) => app.tracker.send({ type: 'enableGps' }),
     pause: (app) => { app.haptic(); return app.tracker.send({ type: 'pause' }); },
     resume: (app) => { app.haptic(); return app.tracker.send({ type: 'resume' }); },
     finish: async (app) => {
-      app.tracker.dismissNotice();
-      await app.tracker.send({ type: 'finish' });
+      const trip = await finishTrip(app);
       app.haptic('success');
-      app.ui.liveMap = null;
-      app.toast('Поездка сохранена');
+      app.toast(finishedText(app, trip));
     },
     'cancel-trip': async (app) => {
       const ok = await app.confirm({ title: 'Отменить поездку?', text: 'Запись, этапы и трек будут удалены.', confirm: 'Удалить запись', danger: true });

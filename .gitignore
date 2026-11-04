@@ -8,3 +8,5 @@ DerivedData/
 Config/Secrets.xcconfig
 supabase/.temp/
 supabase/.branches/
+node_modules/
+app/webkit-failure.png

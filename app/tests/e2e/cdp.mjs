@@ -39,6 +39,9 @@ export async function launch({ chrome = process.env.CHROME || 'google-chrome', p
       else resolve(msg.result);
     } else if (msg.method === 'Runtime.exceptionThrown') {
       errors.push(msg.params.exceptionDetails.exception?.description || msg.params.exceptionDetails.text);
+    } else if (msg.method === 'Log.entryAdded' && msg.params.entry.source === 'security') {
+      // Нарушения Content-Security-Policy
+      errors.push(`CSP: ${msg.params.entry.text}`);
     } else if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') {
       errors.push(msg.params.args.map((a) => a.value ?? a.description).join(' '));
     }
@@ -79,6 +82,7 @@ export async function launch({ chrome = process.env.CHROME || 'google-chrome', p
 
   await send('Runtime.enable');
   await send('Page.enable');
+  await send('Log.enable');
   await send('Emulation.setTimezoneOverride', { timezoneId: 'Europe/Kyiv' });
 
   return {

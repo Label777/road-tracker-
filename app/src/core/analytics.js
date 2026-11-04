@@ -136,7 +136,7 @@ export function monthComparison(trips, now, tz = deviceTimeZone()) {
   };
 }
 
-function weekdaysBetween(start, end, tz) {
+export function weekdaysBetween(start, end, tz = deviceTimeZone()) {
   let n = 0;
   for (let d = startOfDay(start, tz); d < end; d = addDays(d, 1, tz)) if (!isWeekend(d, tz)) n++;
   return n;
@@ -194,3 +194,28 @@ export function compareRoutes(a, b) {
 }
 
 export const projectSavings = (r, trips) => ({ money: r.saved * trips, hours: (r.minutesLost * trips) / 60 });
+
+/**
+ * Бюджет месяца на дорогу: потрачено с 1-го числа, остаток, прогноз на конец месяца
+ * и сколько можно тратить в каждый оставшийся будний день. budget — копейки.
+ */
+export function monthBudget(trips, budget, now, tz = deviceTimeZone()) {
+  if (!(budget > 0)) return null;
+  const month = periodInterval('month', now, tz);
+  const tomorrow = addDays(startOfDay(now, tz), 1, tz);
+  const spent = totalsOf(inInterval(trips, { start: month.start, end: tomorrow })).cost;
+  const f = forecast(trips, 'month', now, { tz });
+  const projected = f ? f.projected : null;
+  const left = budget - spent;
+  const days = weekdaysBetween(tomorrow, month.end, tz);
+  let verdict = 'unknown';
+  if (spent > budget) verdict = 'over';
+  else if (projected != null) verdict = projected > budget ? 'risk' : 'within';
+  return {
+    budget, spent, left, share: spent / budget, projected,
+    overBy: projected != null ? Math.max(0, projected - budget) : Math.max(0, spent - budget),
+    perWeekday: left > 0 && days > 0 ? Math.floor(left / days) : null,
+    weekdaysLeft: days,
+    verdict,
+  };
+}

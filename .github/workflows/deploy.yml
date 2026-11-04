@@ -39,9 +39,9 @@ jobs:
       - name: Собрать сайт (без тестов)
         run: |
           mkdir -p _site
-          cp -r app/index.html app/styles.css app/sw.js app/manifest.webmanifest app/icons app/src _site/
-          # Новая версия кэша при каждой публикации — iPhone получит обновление
-          sed -i "s/const VERSION = 'rt-v1';/const VERSION = 'rt-${GITHUB_SHA::8}';/" _site/sw.js
+          cp -r app/index.html app/styles.css app/sw.js app/manifest.webmanifest app/icons app/src app/vendor _site/
+          # Версия оффлайн-кэша — хеш содержимого (scripts/build-sw.sh): iPhone получит обновление,
+          # только когда файлы действительно изменились
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

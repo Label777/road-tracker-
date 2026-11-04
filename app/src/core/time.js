@@ -48,17 +48,37 @@ function partsFormatter(timeZone) {
   return f;
 }
 
-export const deviceTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+// Пояс устройства перечитывается не чаще раза в 30 с: запрос к Intl дорогой, а вызовов — тысячи на экран.
+let tzCache = null;
+let tzCheckedAt = -Infinity;
+export const deviceTimeZone = () => {
+  const now = Date.now();
+  if (now - tzCheckedAt > 30_000) {
+    tzCache = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    tzCheckedAt = now;
+  }
+  return tzCache;
+};
+
+const WEEKDAYS = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+// Результаты разбора даты кэшируются: аналитика многократно спрашивает одни и те же полночи.
+const partsCache = new Map();
+const PARTS_LIMIT = 20_000;
 
 /** Компоненты даты в часовом поясе: {year, month(1-12), day, hour, minute, second, weekday(1=Пн…7=Вс)}. */
 export function zonedParts(ms, timeZone = deviceTimeZone()) {
+  const key = `${timeZone}|${ms}`;
+  const hit = partsCache.get(key);
+  if (hit) return { ...hit };
   const p = {};
   for (const { type, value } of partsFormatter(timeZone).formatToParts(new Date(ms))) p[type] = value;
-  const weekdays = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
-  return {
+  const out = {
     year: +p.year, month: +p.month, day: +p.day,
-    hour: +p.hour, minute: +p.minute, second: +p.second, weekday: weekdays[p.weekday],
+    hour: +p.hour, minute: +p.minute, second: +p.second, weekday: WEEKDAYS[p.weekday],
   };
+  if (partsCache.size >= PARTS_LIMIT) partsCache.clear();
+  partsCache.set(key, out);
+  return { ...out };
 }
 
 /** Смещение пояса относительно UTC в момент ms (мс). */

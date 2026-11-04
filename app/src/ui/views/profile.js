@@ -3,6 +3,9 @@
 import { html } from '../html.js';
 import { topBar, group, cell, primaryButton, secondaryButton } from '../components.js';
 import { ICONS, PLACE_KINDS, formatDateTime } from '../format.js';
+import { formatMoney } from '../../core/money.js';
+import { saveBackup, restoreBackup, download } from '../backup.js';
+import { budgetSheet } from './dashboard.js';
 import { sheetHeader } from '../sheet.js';
 import { gpsPermission, notificationPermission, isStandalone } from '../permissions.js';
 
@@ -75,14 +78,6 @@ const signInSheet = {
   },
 };
 
-const currencySheet = {
-  label: 'Валюта',
-  render: () => html`
-    ${sheetHeader('Валюта')}
-    <div class="group">${cell({ icon: ICONS.coin, title: 'Украинская гривна', value: '₴ UAH' })}</div>
-    <p class="group-footer">Суммы хранятся в копейках, без ошибок округления. Другие валюты можно будет добавить вместе с переводом интерфейса.</p>`,
-};
-
 // ------------------------------------------------------------------ экран
 
 export const profileView = {
@@ -99,6 +94,8 @@ export const profileView = {
     const work = places.find((p) => p.kind === 'work');
     const notif = notificationPermission();
     const trips = store.liveTrips().length;
+    const lastBackup = store.meta('lastBackupAt');
+    const budget = settings.budget;
 
     const account = !client
       ? cell({ icon: ICONS.cloud, title: 'Подключить облако', sub: 'Сейчас данные только в этом браузере', action: 'open-cloud' })
@@ -121,24 +118,38 @@ export const profileView = {
           ${cell({ icon: ICONS.work, title: PLACE_KINDS.work, sub: work ? (work.address || `радиус ${work.radius} м`) : 'Не указана', href: work ? `#/place/${work.id}` : '#/place/new-work' })}
           ${cell({ icon: ICONS.pin, title: 'Все места', value: String(places.length), href: '#/places' })}
           ${cell({ icon: ICONS.route, title: 'Шаблоны маршрутов', value: String(store.live('routes').length), href: '#/routes' })}
-          ${cell({ icon: ICONS.target, title: 'Подсказка «вы на месте»', sub: 'Во время поездки с GPS у Дома или Работы', toggle: settings.finishHints, field: 'finishHints' })}
-        `, 'Радиус геозоны задаётся в карточке места (100–2000 м). Браузер не видит геозоны в фоне — подсказка работает, пока сайт открыт.')}
+          ${home || work ? cell({ icon: ICONS.target, title: 'Подсказка «вы на месте»', sub: 'Во время поездки с GPS у Дома или Работы', toggle: settings.finishHints, field: 'finishHints' }) : ''}
+        `, home || work
+          ? 'Радиус геозоны задаётся в карточке места (100–2000 м). Браузер не видит геозоны в фоне — подсказка работает, пока сайт открыт.'
+          : 'Укажите Дом или Работу — тогда во время поездки с GPS сайт подскажет завершить её на месте.')}
+
+        ${group('Автоматизация', html`
+          ${cell({ icon: ICONS.bolt, title: 'Команды iPhone', sub: 'Старт при выходе из дома, NFC-метка, запись по расписанию', href: '#/shortcuts' })}
+        `)}
 
         ${group('GPS', html`
           ${cell({ icon: ICONS.gps, title: 'Записывать маршрут по умолчанию', toggle: settings.gpsByDefault, field: 'gpsByDefault' })}
           ${cell({ icon: ICONS.lock, title: 'Доступ к геолокации', value: PERM[app.ui.gpsPermission ?? 'unknown'] })}
         `, app.ui.gpsPermission === 'denied' ? 'Разрешите геолокацию: Настройки iPhone → Safari → Геопозиция.' : 'Координаты пишутся только во время поездки и только пока сайт открыт.')}
 
-        ${group('Уведомления', html`
+        ${notif === 'unsupported' ? '' : group('Уведомления', html`
           ${cell({ icon: ICONS.bell, title: 'Уведомление о прибытии', toggle: settings.notifications && notif === 'granted', field: 'notifications' })}
-          ${cell({ icon: ICONS.lock, title: 'Разрешение', value: PERM[notif] })}
-        `, notif === 'unsupported' ? 'На iPhone уведомления доступны только сайту, установленному на экран «Домой».' : 'Показывается, если вы свернули сайт во время поездки.')}
+          ${notif === 'denied' ? cell({ icon: ICONS.lock, title: 'Разрешение', value: PERM[notif] }) : ''}
+        `, notif === 'denied' ? 'Уведомления запрещены в настройках iPhone: Настройки → Уведомления → Road Tracker.' : 'Показывается, если вы свернули сайт во время поездки.')}
+
+        ${group('Резервная копия', html`
+          ${cell({ icon: ICONS.download, title: 'Сохранить копию', sub: lastBackup ? `Последняя: ${formatDateTime(lastBackup)}` : 'Ещё не сохранялась', action: 'backup' })}
+          <label class="cell"><span class="icon">${ICONS.upload}</span><span class="main"><span>Восстановить из копии</span><small>Файл .json из «Файлов» или iCloud Drive</small></span>
+            <input type="file" accept="application/json,.json" data-field="restore" class="sr-only"></label>
+        `, client?.user
+          ? 'Данные также хранятся в облаке. Копия в «Файлах» — на случай, если понадобится перенести их без облака.'
+          : 'Без облака данные есть только в этом браузере. Сохраняйте копию в «Файлы» раз в неделю — главная напомнит. Треки GPS в копию не входят.')}
 
         ${group('Данные', html`
-          ${cell({ icon: ICONS.coin, title: 'Валюта', value: '₴ гривна', action: 'open-currency' })}
+          ${cell({ icon: ICONS.target, title: 'Бюджет на месяц', value: budget ? formatMoney(budget) : 'не задан', action: 'open-budget' })}
+          ${cell({ icon: ICONS.coin, title: 'Валюта', value: '₴ гривна' })}
           ${cell({ icon: ICONS.download, title: 'Экспорт в CSV', sub: 'Для Excel и Numbers', action: 'export-csv' })}
-          ${cell({ icon: ICONS.download, title: 'Резервная копия (JSON)', sub: 'Все поездки, этапы, места и шаблоны', action: 'export-json' })}
-        `)}
+        `, 'Суммы хранятся в копейках — без ошибок округления.')}
 
         ${group('Приватность', html`
           ${cell({ icon: ICONS.trash, title: 'Удалить историю геолокации', sub: 'Треки и координаты наблюдений', action: 'delete-history', danger: true })}
@@ -157,8 +168,12 @@ export const profileView = {
         <p class="t-caption center faint">Road Tracker · <a href="#/design" class="accent">дизайн-система</a></p>
       </div>`;
   },
-  onInput(app, el) {
+  onInput(app, el, type) {
     const key = el.dataset.field;
+    if (key === 'restore') {
+      if (type === 'change' && el.files?.[0]) restoreBackup(app, el.files[0]).finally(() => { el.value = ''; });
+      return false;
+    }
     if (key === 'notifications' && el.checked) {
       if (!globalThis.Notification) {
         el.checked = false;
@@ -178,7 +193,8 @@ export const profileView = {
   actions: {
     'open-cloud': (app) => app.openSheet(cloudSetupSheet),
     'open-signin': (app) => app.openSheet(signInSheet),
-    'open-currency': (app) => app.openSheet(currencySheet),
+    backup: (app) => saveBackup(app),
+    'open-budget': (app) => app.openSheet(budgetSheet),
     'sync-now': (app) => { app.haptic(); return app.sync.request(); },
     'sign-out': async (app) => {
       const pending = app.store.queue().length;
@@ -205,11 +221,6 @@ export const profileView = {
       if (app.client?.user) await app.client.rpc('delete_my_location_history').catch(() => {});
       app.toast('История геолокации удалена');
     },
-    'export-json': (app) => {
-      const data = {};
-      for (const name of ['locations', 'routes', 'trips', 'trip_segments', 'inspections']) data[name] = app.store.live(name);
-      download(`road-tracker-${today()}.json`, JSON.stringify(data, null, 2), 'application/json');
-    },
     'export-csv': (app) => {
       const { store } = app;
       const rows = [['Дата', 'Начало', 'Окончание', 'Направление', 'Минут', 'Стоимость, грн', 'Этапы', 'Пересадок', 'Контролёр', 'Комментарий']];
@@ -231,11 +242,3 @@ export const profileView = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
-
-function download(name, content, type) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], { type }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-}

@@ -80,11 +80,10 @@ function calendar(app, trips) {
           const t = daily.get(day);
           const label = t ? `${formatDayLong(day)}: поездок ${t.trips}, ${formatDuration(t.activeMs)}, ${formatMoney(t.cost)}${t.controllers ? `, контролёров ${t.controllers}` : ''}` : `${formatDayLong(day)}: поездок нет`;
           return html`
-            <button class="cal-day ${t ? 'has' : ''} ${day === today ? 'today' : ''}" aria-pressed="${day === selected}" data-action="select-day" data-day="${day}" aria-label="${label}">
+            <button class="cal-day ${t ? 'has' : ''} ${day === today ? 'today' : ''}" aria-pressed="${day === selected}" data-action="select-day" data-day="${day}" aria-label="${label}"
+              ${t ? html`style="--heat:${(0.25 + 0.75 * (t.cost / maxCost)).toFixed(2)}"` : ''}>
               <span>${zonedParts(day).day}</span>
-              ${t ? html`<span class="cal-cost">${Math.round(t.cost / 100)}</span>
-                <span class="heat" style="opacity:${(0.35 + 0.65 * (t.cost / maxCost)).toFixed(2)}"></span>
-                ${t.controllers ? html`<span class="ctrl" aria-hidden="true"></span>` : ''}` : ''}
+              ${t?.controllers ? html`<span class="ctrl" aria-hidden="true"></span>` : ''}
             </button>`;
         })}
       </div>
@@ -96,7 +95,7 @@ function calendar(app, trips) {
         metricCard('Расходы', formatMoney(totals.cost)),
         metricCard('Контролёров', String(totals.controllers)),
       )}
-      <p class="t-caption" style="margin-top:var(--s-3)">Нажмите на день, чтобы увидеть поездки. Яркость полосы — расходы, оранжевая точка — встреча с контролёром.</p>
+      <p class="t-caption" style="margin-top:var(--s-3)">Чем ярче день, тем больше в нём расходов; оранжевая точка — контролёр. Нажмите на день, чтобы увидеть поездки и суммы.</p>
     </section>`;
 }
 
@@ -192,8 +191,7 @@ export const historyView = {
       ${topBar('История', {
         large: true,
         actions: html`
-          ${iconButton(ICONS.filter, n ? `Фильтры: ${n}` : 'Фильтры', { action: 'open-filters', count: n || '' })}
-          ${iconButton(ICONS.plus, 'Добавить поездку', { action: 'quick-add' })}`,
+          ${iconButton(ICONS.filter, n ? `Фильтры: ${n}` : 'Фильтры', { action: 'open-filters', count: n || '' })}`,
       })}
       <div class="stack-lg">
         ${unconfirmed.length ? html`<section><div class="section-title"><h2>Требуют подтверждения</h2></div>${unconfirmed.map((t) => tripCard(app.store, t))}</section>` : ''}

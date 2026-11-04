@@ -43,7 +43,8 @@
   --t-subheading: 600 1rem/1.3 var(--font-text);        /* 17 */
   --t-body: 400 1rem/1.4 var(--font-text);              /* 17 */
   --t-callout: 400 0.94rem/1.4 var(--font-text);        /* 16 */
-  --t-caption: 500 0.765rem/1.3 var(--font-text);       /* 13 */
+  --fs-min: 0.765rem;                                    /* 13 pt — меньше текста нет */
+  --t-caption: 500 var(--fs-min)/1.3 var(--font-text);   /* 13 */
   --t-numeric-xl: 700 3.3rem/1 var(--font-numeric);     /* 56 */
   --t-numeric-lg: 700 1.65rem/1.1 var(--font-numeric);  /* 28 */
   --t-numeric: 600 1.05rem/1.2 var(--font-numeric);
@@ -148,14 +149,20 @@ nav.tabs {
   background: rgba(16, 19, 23, 0.82); backdrop-filter: saturate(160%) blur(20px); -webkit-backdrop-filter: saturate(160%) blur(20px);
   border-top: 1px solid var(--border);
 }
-nav.tabs a {
-  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+nav.tabs a, nav.tabs button {
+  position: relative; border: 0; background: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   color: var(--text-tertiary); font: 600 0.62rem/1 var(--font-text); letter-spacing: 0.01em;
   transition: color var(--dur);
 }
 nav.tabs a svg { transition: transform var(--dur) var(--ease-spring); }
 nav.tabs a.on { color: var(--accent); }
 nav.tabs a.on svg { transform: translateY(-1px) scale(1.06); }
+/* Центр: «Добавить» (или «Поездка» во время записи) */
+nav.tabs .center svg { box-sizing: content-box; padding: 7px; margin-top: -14px; border-radius: 14px; background: var(--accent); color: var(--text-on-accent); box-shadow: 0 6px 18px -6px var(--accent-glow); }
+nav.tabs .center { color: var(--text-secondary); }
+nav.tabs .center:active svg { transform: scale(0.92); }
+nav.tabs .center.live svg { background: var(--surface-elevated); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+nav.tabs .center.live.on { color: var(--accent); }
 nav.tabs a.live::before {
   content: ""; position: absolute; top: 8px; left: calc(50% + 8px); width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent); box-shadow: 0 0 0 3px var(--bg-secondary); animation: blink 1.4s ease-in-out infinite;
@@ -253,7 +260,7 @@ nav.tabs a.live::before {
 .expense-card .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; transform-origin: left; animation: grow-x var(--dur-slow) var(--ease-out) both; }
 
 /* ---------- 7. Кнопка старта и статус записи ---------- */
-.hero { display: flex; flex-direction: column; align-items: center; gap: var(--s-6); padding: var(--s-8) 0 var(--s-6); }
+.hero { display: flex; flex-direction: column; align-items: center; gap: var(--s-6); padding: var(--s-8) 0 var(--s-5); }
 .start-orb {
   position: relative; width: min(56vw, 220px); aspect-ratio: 1; border: 0; border-radius: 50%; cursor: pointer;
   display: grid; place-items: center; color: var(--text-on-accent);
@@ -275,7 +282,7 @@ nav.tabs a.live::before {
 
 .tracking-status {
   display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-full);
-  background: var(--surface-elevated); font: 600 0.74rem/1 var(--font-text); color: var(--text-secondary); white-space: nowrap;
+  background: var(--surface-elevated); font: 600 var(--fs-min)/1 var(--font-text); color: var(--text-secondary); white-space: nowrap;
 }
 .tracking-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); }
 .tracking-status.on i { background: var(--accent); box-shadow: 0 0 0 0 var(--accent-glow); animation: ping 1.8s ease-out infinite; }
@@ -288,11 +295,14 @@ nav.tabs a.live::before {
 .brand svg { width: 22px; height: 22px; }
 .greeting h1 { font: var(--t-display); letter-spacing: -0.025em; margin-top: var(--s-3); }
 .greeting .date { font: var(--t-callout); color: var(--text-secondary); margin-top: 4px; text-transform: none; }
+.greeting.compact .date { margin-top: var(--s-3); }
+.greeting.compact .date b { color: var(--text-primary); font-weight: 600; }
 
 /* Прогресс месяца — «дорога» */
 .road-progress { position: relative; height: 10px; border-radius: 5px; background: var(--surface-elevated); overflow: hidden; margin: var(--s-3) 0 var(--s-2); }
 .road-progress .fill { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--accent); transform-origin: left; animation: grow-x 900ms var(--ease-out) both; }
 .road-progress .lane { position: absolute; left: 0; right: 0; top: 4px; height: 2px; background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.35) 0 10px, transparent 10px 20px); }
+.road-progress.over .fill { background: var(--danger); }
 .road-progress .marker { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text-primary); border-radius: 1px; }
 
 .quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
@@ -385,13 +395,13 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 .chart-head .t-num-lg { display: block; }
 .chart { position: relative; height: 160px; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: end; gap: 3px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
 .chart .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--border); pointer-events: none; }
-.chart .gridline span { position: absolute; right: 0; top: -16px; font: 500 0.65rem/1 var(--font-numeric); color: var(--text-tertiary); }
+.chart .gridline span { position: absolute; right: 0; top: -16px; font: 500 var(--fs-min)/1 var(--font-numeric); color: var(--text-tertiary); }
 .chart .col { position: relative; height: 100%; display: flex; align-items: flex-end; border: 0; padding: 0; background: none; cursor: pointer; }
 .chart .col i { display: block; width: 100%; min-height: 0; border-radius: 4px 4px 2px 2px; background: var(--accent); opacity: 0.88; transform-origin: bottom; animation: grow-y 700ms var(--ease-out) both; }
 .chart .col.zero i { background: var(--surface-elevated); height: 3px !important; opacity: 1; }
 .chart .col[aria-pressed="true"] i { opacity: 1; box-shadow: 0 0 0 2px var(--accent-soft); }
 .chart.dim .col:not([aria-pressed="true"]) i { opacity: 0.35; }
-.chart .col .x { position: absolute; bottom: -18px; left: 50%; transform: translateX(-50%); font: 500 0.6rem/1 var(--font-numeric); color: var(--text-tertiary); white-space: nowrap; }
+.chart .col .x { position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); font: 500 var(--fs-min)/1 var(--font-numeric); color: var(--text-tertiary); white-space: nowrap; }
 .chart-tip { position: absolute; z-index: 3; top: -6px; transform: translate(-50%, -100%); padding: 8px 10px; border-radius: 10px; background: var(--surface-elevated); border: 1px solid var(--border-strong); white-space: nowrap; pointer-events: none; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
 .chart-tip b { display: block; font: var(--t-numeric); }
 .chart-tip small { font: var(--t-caption); color: var(--text-secondary); }
@@ -407,7 +417,7 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 .table { width: 100%; border-collapse: collapse; font: var(--t-callout); }
 .table td { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
-.pill { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: var(--r-full); font: 700 0.72rem/1 var(--font-text); }
+.pill { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: var(--r-full); font: 700 var(--fs-min)/1 var(--font-text); }
 .pill.insufficient { background: rgba(255, 93, 93, 0.14); color: var(--danger); }
 .pill.low { background: rgba(255, 181, 71, 0.14); color: var(--warning); }
 .pill.moderate, .pill.good { background: var(--accent-soft); color: var(--accent); }
@@ -419,17 +429,13 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 .cal-wd { text-align: center; font: var(--t-caption); color: var(--text-tertiary); padding-bottom: 6px; }
 .cal-day {
   position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px;
-  aspect-ratio: 1 / 1.15; padding-top: 6px; border: 0; border-radius: 12px; background: none; color: var(--text-secondary);
+  aspect-ratio: 1 / 1; padding-top: 0; justify-content: center; border: 0; border-radius: 12px; background: none; color: var(--text-secondary);
   font: 500 0.9rem/1 var(--font-numeric); cursor: pointer; transition: background var(--dur-fast);
 }
-.cal-day.has { color: var(--text-primary); background: var(--surface-primary); }
+.cal-day.has { color: var(--text-primary); background: color-mix(in srgb, var(--accent) calc(var(--heat, 0.3) * 42%), var(--surface-primary)); }
 .cal-day.today { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .cal-day[aria-pressed="true"] { background: var(--accent); color: var(--text-on-accent); }
-.cal-day[aria-pressed="true"] .cal-cost { color: var(--text-on-accent); opacity: 0.75; }
-.cal-day .heat { position: absolute; left: 22%; right: 22%; bottom: 5px; height: 3px; border-radius: 2px; background: var(--accent); }
-.cal-day[aria-pressed="true"] .heat { background: var(--text-on-accent); }
 .cal-day .ctrl { position: absolute; top: 5px; right: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--warning); }
-.cal-cost { font: 500 0.6rem/1 var(--font-numeric); color: var(--text-tertiary); }
 
 /* ---------- 13. Нижняя шторка (ConfirmationSheet / Bottom Sheet) ---------- */
 .sheet-root { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; justify-content: center; }
@@ -469,9 +475,52 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 .map-pin { position: absolute; left: 50%; top: 50%; z-index: 500; width: 24px; height: 24px; margin: -24px 0 0 -12px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--accent); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); pointer-events: none; }
 .leaflet-container { background: var(--bg-secondary) !important; font: inherit !important; }
 .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.4); }
-.leaflet-control-attribution { background: rgba(11, 13, 16, 0.7) !important; color: var(--text-tertiary) !important; font-size: 9px !important; }
+.leaflet-control-attribution { background: rgba(11, 13, 16, 0.7) !important; color: var(--text-tertiary) !important; font-size: 11px !important; }
 .leaflet-control-attribution a { color: var(--text-secondary) !important; }
 .leaflet-bar a { background: var(--surface-elevated) !important; color: var(--text-primary) !important; border-color: var(--border) !important; }
+
+/* «Обычная поездка» — одно касание */
+.usual-card {
+  display: flex; align-items: center; gap: var(--s-3); width: 100%; padding: var(--s-3) var(--s-4); margin-bottom: var(--s-3);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface-primary)); color: var(--text-primary); text-align: left; cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast);
+}
+.usual-card:active { transform: scale(0.98); }
+.usual-card .glyph { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent); color: var(--text-on-accent); }
+.usual-card .main { flex: 1; min-width: 0; }
+.usual-card .title { display: block; font: var(--t-subheading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usual-card .sub { display: block; font: var(--t-caption); color: var(--text-secondary); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usual-card .end { text-align: right; flex: none; }
+.usual-card .end .t-num, .usual-card .end .t-caption { display: block; }
+.usual-card.done { border-color: var(--border); background: var(--surface-primary); }
+.usual-card.done .glyph { background: var(--surface-elevated); color: var(--accent); }
+
+/* Сегодня / месяц — сводка на первом экране */
+.summary-strip { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); margin-bottom: var(--s-3); }
+.summary-strip a { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: var(--s-3) var(--s-4); border-radius: var(--r-lg); background: var(--surface-primary); border: 1px solid var(--border); color: inherit; text-decoration: none; }
+.summary-strip .t-caption:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chips.scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--s-5)); padding: 0 var(--s-5); }
+.chips.scroll::-webkit-scrollbar { display: none; }
+.chips.scroll .chip { flex: none; }
+
+/* Выводы словами в аналитике */
+.insights { display: grid; gap: var(--s-2); }
+.insight { display: flex; gap: var(--s-3); align-items: flex-start; margin: 0; padding: var(--s-3) var(--s-4); border-radius: var(--r-md); background: var(--surface-primary); border: 1px solid var(--border); font: var(--t-callout); }
+.insight i { flex: none; width: 8px; height: 8px; margin-top: 0.45em; border-radius: 50%; background: var(--text-tertiary); }
+.insight.good i { background: var(--accent); }
+.insight.warn i { background: var(--warning); }
+
+/* Подсказка с действием («Отменить», «Обновить») */
+#toast { display: flex; align-items: center; gap: var(--s-3); }
+#toast.actionable.show { pointer-events: auto; }
+.toast-action { flex: none; min-height: 32px; padding: 0 var(--s-3); border: 0; border-radius: var(--r-sm); background: var(--accent); color: var(--text-on-accent); font: 600 var(--fs-min)/1 var(--font-text); cursor: pointer; }
+
+/* Команды iPhone */
+.link-cell { cursor: default; }
+.link-cell code { display: block; margin-top: 4px; font: 500 var(--fs-min)/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-tertiary); overflow-wrap: anywhere; }
+.cell .main small.wrap { white-space: normal; }
+.recipe { margin: 0; padding: var(--s-4) var(--s-4) var(--s-4) calc(var(--s-4) + 1.2em); display: grid; gap: var(--s-2); font: var(--t-callout); }
 
 /* ---------- 15. Движение ---------- */
 .reveal { animation: rise var(--dur-slow) var(--ease-out) both; }
@@ -503,6 +552,12 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 }
 
 /* ---------- 16. Размеры экранов ---------- */
+/* Невысокие экраны (iPhone SE): пульт целиком на первом экране */
+@media (max-height: 700px) {
+  .start-orb { width: min(46vw, 172px); }
+  .hero { gap: var(--s-4); padding: var(--s-6) 0 var(--s-4); }
+  .start-orb .ring { inset: -12px; }
+}
 @media (max-width: 380px) {
   :root { --s-5: 16px; }
   .quick-action { min-height: 80px; font-size: 0.8rem; }

@@ -1,7 +1,9 @@
 // Карта (Leaflet + OpenStreetMap), загружается только когда нужна.
-// Без сети карта не покажется — формы при этом работают (координаты вводятся вручную).
+// Leaflet лежит в самом сайте (vendor/) и работает офлайн; тайлы уже виденных мест
+// service worker хранит в кэше. Без сети и кэша формы работают — координаты вводятся вручную.
 
-const LEAFLET = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet';
+const LEAFLET = new URL('../../vendor/leaflet/leaflet', import.meta.url).href;
+const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 let loading = null;
 
 function loadLeaflet() {
@@ -11,13 +13,11 @@ function loadLeaflet() {
       const css = document.createElement('link');
       css.rel = 'stylesheet';
       css.href = `${LEAFLET}.css`;
-      css.crossOrigin = '';
       document.head.append(css);
       const js = document.createElement('script');
       js.src = `${LEAFLET}.js`;
-      js.crossOrigin = '';
       js.onload = () => resolve(globalThis.L);
-      js.onerror = () => { loading = null; reject(new Error('Карта недоступна без интернета')); };
+      js.onerror = () => { loading = null; reject(new Error('Не удалось загрузить карту')); };
       document.head.append(js);
     });
   }
@@ -42,8 +42,8 @@ export async function mapView(el, opts) {
   }
   if (!el.isConnected) return null;
   const map = L.map(el, { zoomControl: true, attributionControl: true });
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
+  L.tileLayer(TILE_URL, {
+    maxZoom: 19, crossOrigin: true,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(map);
 
@@ -106,8 +106,8 @@ export class LiveMap {
     }
     this.L = L;
     this.map = L.map(this.el, { zoomControl: false, attributionControl: true }).setView([50.4501, 30.5234], 13);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+    L.tileLayer(TILE_URL, {
+      maxZoom: 19, crossOrigin: true, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
     }).addTo(this.map);
     this.line = L.polyline([], { color: ACCENT, weight: 5, opacity: 0.95, lineCap: 'round' }).addTo(this.map);
     this.dot = L.circleMarker([0, 0], { radius: 8, color: '#0b0d10', weight: 3, fillColor: ACCENT, fillOpacity: 1 });

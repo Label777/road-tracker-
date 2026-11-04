@@ -9,6 +9,7 @@ import {
   compareRoutes, projectSavings, averageTripMs, routeStats, segmentSignature,
 } from '../../core/analytics.js';
 import { inspectionStats } from '../../core/inspections.js';
+import { insights } from '../../core/insights.js';
 import { TRANSPORT, TRANSPORT_ICONS, OUTCOME_LABELS, RELIABILITY, ICONS, formatPercent, LOCALE } from '../format.js';
 
 const PERIODS = { week: 'Неделя', month: 'Месяц', year: 'Год' };
@@ -46,9 +47,8 @@ function transportSection(trips) {
     }))}`;
 }
 
-function routesSection(app, trips) {
-  const { store } = app;
-  const label = (t) => {
+function routeLabeler(store) {
+  return (t) => {
     if (t.routeId) {
       const r = store.data.routes.get(t.routeId);
       if (r) return { key: `r:${r.id}`, label: r.name };
@@ -58,7 +58,10 @@ function routesSection(app, trips) {
       .map((s) => (s.number ? `${TRANSPORT[s.transport]} ${s.number}` : TRANSPORT[s.transport])).join(' → ') || 'Без этапов';
     return { key: `s:${t.direction}:${sig}`, label: text };
   };
-  const stats = routeStats(trips, label).filter((r) => r.count >= 2).slice(0, 4);
+}
+
+function routesSection(app, trips) {
+  const stats = routeStats(trips, routeLabeler(app.store)).filter((r) => r.count >= 2).slice(0, 4);
   if (!stats.length) {
     return emptyState({ text: 'Сравнение появится, когда по одному маршруту наберётся хотя бы две поездки.', compact: true });
   }
@@ -133,29 +136,60 @@ function inspectionsSection(app, period, now) {
     </details>`;
 }
 
-function savingsSection(app) {
-  const c = app.ui.calc ??= { aMin: 35, aCost: 3000, bMin: 50, bCost: 1800, trips: 44 };
+/**
+ * Калькулятор «деньги против времени». Подставляет два ваших самых частых маршрута
+ * (средние по истории) и число поездок за последние 30 дней; без истории поля пустые.
+ */
+function calcDefaults(app, all, now) {
+  const stats = routeStats(all, routeLabeler(app.store)).filter((r) => r.count >= 2);
+  const recent = all.filter((t) => t.startedAt >= now - 30 * 86_400_000).length;
+  const [a, b] = stats;
+  const pick = (r) => (r ? { min: Math.round(r.avgMs / 60_000), cost: r.avgCost, label: r.label, count: r.count } : { min: null, cost: null, label: '', count: 0 });
+  const A = pick(a);
+  const B = pick(b);
+  return { aMin: A.min, aCost: A.cost, aLabel: A.label, aCount: A.count, bMin: B.min, bCost: B.cost, bLabel: B.label, bCount: B.count, trips: recent || null };
+}
+
+function savingsSection(app, all, now) {
+  const c = app.ui.calc ??= calcDefaults(app, all, now);
+  const field = (k, kind) => {
+    const v = c[`${k}${kind}`];
+    const value = v == null ? '' : kind === 'Cost' ? moneyToInput(v) : v;
+    return html`<input inputmode="${kind === 'Cost' ? 'decimal' : 'numeric'}" data-field="${k}${kind}" value="${value}" placeholder="${kind === 'Cost' ? 'цена' : 'мин'}">`;
+  };
   return html`
+    ${c.aLabel ? html`<p class="t-caption" style="margin-bottom:var(--s-3)">Подставлены средние по вашим поездкам — поменяйте значения, чтобы сравнить другой вариант.</p>` : ''}
     <div class="grid-2">
       ${['a', 'b'].map((k) => html`<div class="surface" style="padding:var(--s-3)">
-        <div class="t-sub" style="margin-bottom:var(--s-2)">Маршрут ${k === 'a' ? 'А' : 'Б'}</div>
-        <label class="field" style="margin-bottom:var(--s-2)"><span>минут</span><input inputmode="numeric" data-field="${k}Min" value="${c[`${k}Min`]}"></label>
-        <label class="field" style="margin:0"><span>стоимость, ₴</span><input inputmode="decimal" data-field="${k}Cost" value="${moneyToInput(c[`${k}Cost`])}"></label>
+        <div class="t-sub" style="margin-bottom:2px">Вариант ${k === 'a' ? 'А' : 'Б'}</div>
+        <div class="t-caption" style="min-height:2.6em;margin-bottom:var(--s-2)">${c[`${k}Label`] ? `${c[`${k}Label`]} · поездок: ${c[`${k}Count`]}` : 'введите свои значения'}</div>
+        <label class="field" style="margin-bottom:var(--s-2)"><span>минут в пути</span>${field(k, 'Min')}</label>
+        <label class="field" style="margin:0"><span>стоимость, ₴</span>${field(k, 'Cost')}</label>
       </div>`)}
     </div>
-    <label class="field" style="margin-top:var(--s-3)"><span>Поездок в месяц</span><input inputmode="numeric" data-field="trips" value="${c.trips}"></label>
+    <label class="field" style="margin-top:var(--s-3)"><span>Поездок в месяц${c.trips && c.aLabel ? ' (за последние 30 дней)' : ''}</span><input inputmode="numeric" data-field="trips" value="${c.trips ?? ''}" placeholder="например, 40"></label>
     <div id="calc-result">${savingsResult(c)}</div>`;
 }
 
 function savingsResult(c) {
+  if ([c.aMin, c.aCost, c.bMin, c.bCost].some((v) => v == null)) {
+    return html`<p class="t-callout muted">Введите время и цену двух вариантов дороги — калькулятор покажет, сколько стоит каждая сэкономленная минута.</p>`;
+  }
   const r = compareRoutes({ name: 'А', minutes: c.aMin, cost: c.aCost }, { name: 'Б', minutes: c.bMin, cost: c.bCost });
-  if (r.verdict === 'identical') return html`<p class="t-callout">Маршруты равноценны.</p>`;
-  if (r.verdict === 'dominates') return html`<p class="t-callout">Маршрут ${r.winner} и не дороже, и не медленнее — выбор очевиден.</p>`;
-  const m = projectSavings(r, c.trips);
+  if (r.verdict === 'identical') return html`<p class="t-callout">Варианты равноценны.</p>`;
+  if (r.verdict === 'dominates') return html`<p class="t-callout">Вариант ${r.winner} и не дороже, и не медленнее — выбор очевиден.</p>`;
+  const m = c.trips ? projectSavings(r, c.trips) : null;
   return html`
-    <p class="t-callout">Маршрут ${r.cheaper} экономит ${formatMoney(r.saved)}, но дольше на ${r.minutesLost} мин.</p>
+    <p class="t-callout">Вариант ${r.cheaper} экономит ${formatMoney(r.saved)} за поездку, но дольше на ${r.minutesLost} мин.</p>
     <p class="t-num-lg accent" style="margin:var(--s-2) 0">Минута стоит ${formatMoney(r.perMinute)}</p>
-    <p class="t-caption">За месяц (${c.trips} поездок): ${formatMoney(m.money)} экономии и ${m.hours.toFixed(1).replace('.', ',')} ч в дороге дополнительно.</p>`;
+    ${m ? html`<p class="t-caption">За месяц (${c.trips} поездок): ${formatMoney(m.money)} экономии и ${m.hours.toFixed(1).replace('.', ',')} ч в дороге дополнительно.</p>` : ''}`;
+}
+
+function insightsSection(all, period, now) {
+  const items = insights(all, period, now);
+  if (!items.length) return '';
+  return html`<section class="insights reveal" aria-label="Выводы">${items.map((x) => html`
+    <p class="insight ${x.tone}"><i aria-hidden="true"></i><span>${x.text}</span></p>`)}</section>`;
 }
 
 export const analyticsView = {
@@ -186,6 +220,7 @@ export const analyticsView = {
       ${topBar('Аналитика', { large: true })}
       <div class="stack-lg">
         ${segmented(PERIODS, period, { action: 'period', label: 'Период' })}
+        ${insightsSection(all, period, now)}
 
         <section class="reveal" aria-label="Расходы">
           ${chartContainer({
@@ -222,12 +257,18 @@ export const analyticsView = {
         </section>
 
         <section class="reveal">${sectionTitle('Контролёры')}${inspectionsSection(app, period, now)}</section>
-        <section class="reveal">${sectionTitle('Калькулятор экономии')}${savingsSection(app)}</section>
+        <section class="reveal">${sectionTitle('Деньги против времени')}${savingsSection(app, all, now)}</section>
       </div>`;
   },
   onInput(app, el) {
     const c = app.ui.calc;
     const key = el.dataset.field;
+    if (el.value.trim() === '') {
+      el.classList.remove('invalid');
+      c[key] = null;
+      el.closest('main').querySelector('#calc-result').innerHTML = savingsResult(c).toString();
+      return false;
+    }
     const v = key.endsWith('Cost') ? parseMoney(el.value) : Number(el.value);
     const ok = v != null && Number.isFinite(v) && v >= 0 && (key.endsWith('Cost') || v > 0);
     el.classList.toggle('invalid', !ok);
