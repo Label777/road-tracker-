@@ -12,9 +12,6 @@ const browser = await engine.launch();
 const context = await browser.newContext({
   viewport: { width: 375, height: 667 }, deviceScaleFactor: 2, isMobile: engine.name() !== 'firefox', hasTouch: true,
   locale: 'ru-RU', timezoneId: 'Europe/Kyiv',
-  // waitForFunction в WebKit выполняет строку через eval — нашу CSP (script-src 'self') это блокирует.
-  // Саму CSP сайта проверяет e2e в Chrome (нарушения ловятся через Log.entryAdded).
-  bypassCSP: true,
 });
 const page = await context.newPage();
 const errors = [];
@@ -27,6 +24,16 @@ const check = (cond, label) => {
   n++;
   console.log(`ok  ${label}`);
 };
+// page.waitForFunction в WebKit опрашивает условие через eval, а CSP сайта (script-src 'self') это
+// запрещает — и правильно. Поэтому ждём сами, через page.evaluate.
+async function until(fn, label, timeout = 10_000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    if (await page.evaluate(fn)) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`Не дождались: ${label}`);
+}
 const count = () => page.evaluate(() => window.roadTracker.store.liveTrips().length);
 
 try {
@@ -47,7 +54,7 @@ try {
   await page.fill('#sheet [data-field="qa.total"]', '25');
   await page.click('#sheet [data-action="qa-day"][data-value="yesterday"]');
   await page.click('#sheet [data-action="qa-save"]');
-  await page.waitForFunction(() => window.roadTracker.store.liveTrips().length === 1);
+  await until(() => window.roadTracker.store.liveTrips().length === 1, '() => window.roadTracker.store.liveTrips().length === 1');
   check(true, 'поездка добавлена из шторки (IndexedDB в WebKit)');
 
   // Обычная поездка в одно касание
@@ -55,14 +62,14 @@ try {
   await page.click(`[data-action="home-direction"][data-value="${dir}"]`);
   await page.waitForSelector('.usual-card');
   await page.click('.usual-card');
-  await page.waitForFunction(() => window.roadTracker.store.liveTrips().length === 2);
+  await until(() => window.roadTracker.store.liveTrips().length === 2, '() => window.roadTracker.store.liveTrips().length === 2');
   check(true, '«Обычная поездка» записана одним касанием');
 
   // Ссылки-действия
   await page.evaluate(() => { location.hash = '#/do/toggle?dir=to_work'; });
-  await page.waitForFunction(() => !!window.roadTracker.tracker.session && location.hash === '#/trip');
+  await until(() => !!window.roadTracker.tracker.session && location.hash === '#/trip', "() => !!window.roadTracker.tracker.session && location.hash === '#/trip'");
   await page.evaluate(() => { location.hash = '#/do/finish'; });
-  await page.waitForFunction(() => !window.roadTracker.tracker.session && location.hash === '#/home');
+  await until(() => !window.roadTracker.tracker.session && location.hash === '#/home', "() => !window.roadTracker.tracker.session && location.hash === '#/home'");
   check((await count()) === 3, 'ссылки #/do/toggle и #/do/finish записывают поездку');
 
   // Аналитика и выводы
@@ -72,7 +79,7 @@ try {
 
   // Перезагрузка — данные на месте
   await page.reload();
-  await page.waitForFunction(() => !!window.roadTracker?.store);
+  await until(() => !!window.roadTracker?.store, '() => !!window.roadTracker?.store');
   check((await count()) === 3, 'после перезагрузки поездки на месте');
 
   // Карта из собственной копии Leaflet

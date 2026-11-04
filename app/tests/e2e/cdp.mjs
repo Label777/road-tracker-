@@ -14,7 +14,7 @@ export async function launch({ chrome = process.env.CHROME || 'google-chrome', p
   ], { stdio: 'ignore' });
 
   let ws;
-  for (let i = 0; i < 60 && !ws; i++) {
+  for (let i = 0; i < 150 && !ws; i++) { // до 30 с: на CI Chrome иногда стартует медленно
     try {
       const list = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
       const page = list.find((t) => t.type === 'page');
