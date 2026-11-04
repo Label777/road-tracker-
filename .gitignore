@@ -1,0 +1,10 @@
+.DS_Store
+*.xcodeproj/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+DerivedData/
+.build/
+.swiftpm/
+Config/Secrets.xcconfig
+supabase/.temp/
+supabase/.branches/
