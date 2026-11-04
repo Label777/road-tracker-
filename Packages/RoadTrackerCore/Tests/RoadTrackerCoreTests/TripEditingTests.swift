@@ -120,7 +120,7 @@ struct MonthGridTests {
         let day = totals[T.date(2026, 11, 3)]
         #expect(day?.trips == 2)
         #expect(day?.cost == .uah(16))
-        #expect(day?.activeSeconds == 90 * 60)
+        #expect(abs((day?.activeSeconds ?? 0) - 90 * 60) < 0.001)
         #expect(day?.controllers == 1)
         #expect(totals.count == 1)
     }

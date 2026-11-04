@@ -166,6 +166,13 @@ extension TripStore {
         try commit()
     }
 
+    func setRoute(tripID: UUID, routeID: UUID?) throws {
+        guard let trip = try trip(id: tripID), trip.routeID != routeID else { return }
+        trip.routeID = routeID
+        touch(trip)
+        try commit()
+    }
+
     func setDirection(tripID: UUID, _ direction: TripDirection) throws {
         guard let trip = try trip(id: tripID), trip.direction != direction else { return }
         trip.direction = direction

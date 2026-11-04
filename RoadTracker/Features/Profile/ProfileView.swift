@@ -12,6 +12,14 @@ struct ProfileView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section("Маршруты") {
+                    NavigationLink { PlacesView() } label: {
+                        Label("Места: дом, работа и другие", systemImage: "mappin.and.ellipse")
+                    }
+                    NavigationLink { RoutesView() } label: {
+                        Label("Шаблоны маршрутов", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    }
+                }
                 Section("Синхронизация") {
                     SyncStatusRow(status: sync.status, isConfigured: isCloudConfigured)
                     if sync.pendingCount > 0 {

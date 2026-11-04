@@ -47,6 +47,31 @@ final class TrackingCoordinator {
         for effect in effects { apply(effect) }
     }
 
+    /// Старт по шаблону маршрута: направление и шаблон берутся из него,
+    /// первый этап шаблона открывается сразу.
+    func start(template: RouteRecord, at date: Date = .now) {
+        guard activeSession == nil else { return }
+        send(.userStart(direction: template.direction, mode: .manual, at: date))
+        guard let id = activeSession?.tripID else { return }
+        perform {
+            try store.setRoute(tripID: id, routeID: template.id)
+            if let first = template.templateSegments.first {
+                try store.appendLiveSegment(tripID: id, transport: first.transport, number: first.number ?? "",
+                                            cost: Money(minorUnits: first.cost), at: date)
+            }
+        }
+    }
+
+    /// Действия во время поездки, не меняющие состояние машины (этапы, контролёры, направление).
+    func perform(_ action: () throws -> Void) {
+        do {
+            try action()
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     private func apply(_ effect: TrackingEffect) {
         do {
             switch effect {
@@ -57,6 +82,7 @@ final class TrackingCoordinator {
             case .tripResumed(let id, let at):
                 try store.setPaused(tripID: id, at: at, paused: false, pauses: activeSession?.pauses ?? [])
             case .tripFinished(let s, let end):
+                try store.closeOpenSegment(tripID: s.tripID, at: end)
                 try store.finishTrip(s, at: end)
             case .tripCancelled(let id):
                 if let trip = try store.trip(id: id) { try store.delete(trip) }

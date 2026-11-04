@@ -86,12 +86,13 @@ struct DashboardView: View {
     private var recentCard: some View {
         Card(title: "Последние поездки") {
             if trips.isEmpty {
-                Text("Пока нет поездок. Нажмите «Начать поездку» — или добавьте её вручную во вкладке «История».")
+                Text("Пока нет поездок. Нажмите «Начать поездку» — или добавьте её вручную во вкладке «История» (кнопка «+»).")
                     .font(.subheadline)
                     .foregroundStyle(Theme.textSecondary)
             } else {
                 ForEach(trips.prefix(5)) { trip in
-                    TripRow(trip: trip)
+                    NavigationLink { TripEditorView(trip: trip) } label: { TripRow(trip: trip) }
+                        .buttonStyle(.plain)
                 }
             }
         }
