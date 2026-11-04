@@ -136,8 +136,10 @@ final class SyncManager {
             return try context.fetch(FetchDescriptor<SegmentRecord>(predicate: #Predicate { $0.id == id })).first?.dto(userID: userID)
         case .inspection:
             return try context.fetch(FetchDescriptor<InspectionRecord>(predicate: #Predicate { $0.id == id })).first?.dto(userID: userID)
-        case .route, .settings:
-            return nil // появятся вместе с экранами маршрутов и настроек (этапы 2–3)
+        case .route:
+            return try context.fetch(FetchDescriptor<RouteRecord>(predicate: #Predicate { $0.id == id })).first?.dto(userID: userID)
+        case .settings:
+            return nil // настройки отслеживания появятся на этапе 3
         }
     }
 

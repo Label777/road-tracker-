@@ -193,6 +193,39 @@ final class TrackPointRecord {
     }
 }
 
+/// Шаблон маршрута: «Дом → маршрутка 720 → метро → Работа».
+@Model
+final class RouteRecord {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var directionRaw: String
+    var originID: UUID?
+    var destinationID: UUID?
+    /// Закодированный [RouteTemplateSegment].
+    var segmentsData: Data?
+    var createdAt: Date
+    var updatedAt: Date
+    var deletedAt: Date?
+
+    init(id: UUID = UUID(), name: String, direction: TripDirection, now: Date = .now) {
+        self.id = id
+        self.name = name
+        self.directionRaw = direction.rawValue
+        self.createdAt = now
+        self.updatedAt = now
+    }
+
+    var direction: TripDirection {
+        get { TripDirection(rawValue: directionRaw) ?? .other }
+        set { directionRaw = newValue.rawValue }
+    }
+    var templateSegments: [RouteTemplateSegment] {
+        get { segmentsData.flatMap { try? JSONDecoder().decode([RouteTemplateSegment].self, from: $0) } ?? [] }
+        set { segmentsData = try? JSONEncoder().encode(newValue) }
+    }
+    var typicalCost: Money { Money(minorUnits: templateSegments.reduce(0) { $0 + $1.cost }) }
+}
+
 /// Постоянная очередь синхронизации: переживает закрытие и перезапуск приложения.
 @Model
 final class SyncOperationRecord {
@@ -232,7 +265,7 @@ final class SyncOperationRecord {
 
 enum RoadTrackerSchema {
     static var models: [any PersistentModel.Type] {
-        [PlaceRecord.self, TripRecord.self, SegmentRecord.self, InspectionRecord.self,
+        [PlaceRecord.self, RouteRecord.self, TripRecord.self, SegmentRecord.self, InspectionRecord.self,
          TrackPointRecord.self, SyncOperationRecord.self]
     }
 

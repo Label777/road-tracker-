@@ -12,6 +12,7 @@ protocol RemoteStore: Sendable {
 /// Строка для отправки. Ключи совпадают с колонками PostgreSQL (snake_case).
 enum RemoteRow: Sendable {
     case location(LocationDTO)
+    case route(RouteDTO)
     case trip(TripDTO)
     case segment(SegmentDTO)
     case inspection(InspectionDTO)
@@ -19,6 +20,7 @@ enum RemoteRow: Sendable {
     var table: String {
         switch self {
         case .location: SyncEntity.location.rawValue
+        case .route: SyncEntity.route.rawValue
         case .trip: SyncEntity.trip.rawValue
         case .segment: SyncEntity.segment.rawValue
         case .inspection: SyncEntity.inspection.rawValue
@@ -35,6 +37,18 @@ struct LocationDTO: Codable, Sendable {
     var latitude: Double
     var longitude: Double
     var radius: Int
+    var updated_at: Date
+    var deleted_at: Date?
+}
+
+struct RouteDTO: Codable, Sendable {
+    var id: UUID
+    var user_id: UUID
+    var name: String
+    var direction: String
+    var origin_id: UUID?
+    var destination_id: UUID?
+    var segments: [RouteTemplateSegment]
     var updated_at: Date
     var deleted_at: Date?
 }
@@ -98,6 +112,14 @@ extension PlaceRecord {
         .location(LocationDTO(id: id, user_id: userID, kind: kindRaw, name: name, address: address,
                               latitude: latitude, longitude: longitude, radius: radius,
                               updated_at: updatedAt, deleted_at: deletedAt))
+    }
+}
+
+extension RouteRecord {
+    func dto(userID: UUID) -> RemoteRow {
+        .route(RouteDTO(id: id, user_id: userID, name: name, direction: directionRaw,
+                        origin_id: originID, destination_id: destinationID, segments: templateSegments,
+                        updated_at: updatedAt, deleted_at: deletedAt))
     }
 }
 

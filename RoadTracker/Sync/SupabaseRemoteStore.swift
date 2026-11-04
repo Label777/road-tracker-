@@ -34,6 +34,7 @@ final class SupabaseRemoteStore: RemoteStore {
         let query = client.from(row.table)
         switch row {
         case .location(let dto):   try await query.upsert(dto, onConflict: "id", returning: .minimal).execute()
+        case .route(let dto):      try await query.upsert(dto, onConflict: "id", returning: .minimal).execute()
         case .trip(let dto):       try await query.upsert(dto, onConflict: "id", returning: .minimal).execute()
         case .segment(let dto):    try await query.upsert(dto, onConflict: "id", returning: .minimal).execute()
         case .inspection(let dto): try await query.upsert(dto, onConflict: "id", returning: .minimal).execute()

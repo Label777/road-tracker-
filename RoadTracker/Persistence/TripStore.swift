@@ -10,7 +10,7 @@ final class TripStore {
     let context: ModelContext
     /// Вызывается после успешного сохранения (SyncManager запускает отправку).
     var onCommit: (() -> Void)?
-    private let clock: () -> Date
+    let clock: () -> Date
 
     init(context: ModelContext, clock: @escaping () -> Date = { .now }) {
         self.context = context
@@ -147,7 +147,7 @@ final class TripStore {
 
     // MARK: Очередь
 
-    private func touch(_ trip: TripRecord) {
+    func touch(_ trip: TripRecord) {
         trip.updatedAt = clock()
         enqueue(.trip, trip.id, .upsert)
     }
@@ -167,16 +167,20 @@ final class TripStore {
         }
     }
 
-    private func commit() throws {
+    func commit() throws {
         try context.save()
         onCommit?()
     }
 
     enum StoreError: LocalizedError {
         case invalidInterval
+        case invalidPlace
+        case invalidRoute
         var errorDescription: String? {
             switch self {
-            case .invalidInterval: String(localized: "Время окончания должно быть позже начала.")
+            case .invalidInterval: String(localized: "Проверьте время поездки и её этапов.")
+            case .invalidPlace: String(localized: "Укажите название места и радиус от 100 до 2000 м.")
+            case .invalidRoute: String(localized: "Укажите название маршрута и хотя бы один этап.")
             }
         }
     }
@@ -186,8 +190,11 @@ extension TripRecord {
     var summary: TripSummary {
         TripSummary(id: id, direction: direction, startedAt: startedAt, finishedAt: finishedAt ?? startedAt,
                     activeSeconds: activeSeconds, timeZoneIdentifier: timeZoneIdentifier,
-                    segments: liveSegments.map { .init(transport: $0.transport, cost: Money(minorUnits: $0.cost)) },
+                    segments: liveSegments.map {
+                        .init(transport: $0.transport, cost: Money(minorUnits: $0.cost), number: $0.transportNumber)
+                    },
                     extraCost: Money(minorUnits: extraCost),
-                    inspectionsWithController: liveInspections.filter { $0.outcome.controllerPresent == true }.count)
+                    inspectionsWithController: liveInspections.filter { $0.outcome.controllerPresent == true }.count,
+                    routeID: routeID)
     }
 }

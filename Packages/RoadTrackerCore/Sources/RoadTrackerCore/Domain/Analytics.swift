@@ -5,9 +5,12 @@ public struct TripSummary: Hashable, Sendable {
     public struct Segment: Hashable, Sendable {
         public var transport: TransportType
         public var cost: Money
-        public init(transport: TransportType, cost: Money) {
+        /// Номер маршрута («720»), если указан.
+        public var number: String?
+        public init(transport: TransportType, cost: Money, number: String? = nil) {
             self.transport = transport
             self.cost = cost
+            self.number = number
         }
     }
 
@@ -21,11 +24,15 @@ public struct TripSummary: Hashable, Sendable {
     /// Стоимость поездки без детализации по сегментам (ручной ввод «итого»).
     public var extraCost: Money
     public var inspectionsWithController: Int
+    /// Шаблон маршрута, по которому создана поездка.
+    public var routeID: UUID?
 
     public init(id: UUID = UUID(), direction: TripDirection, startedAt: Date, finishedAt: Date,
                 activeSeconds: TimeInterval? = nil, timeZoneIdentifier: String? = nil,
-                segments: [Segment] = [], extraCost: Money = .zero, inspectionsWithController: Int = 0) {
+                segments: [Segment] = [], extraCost: Money = .zero, inspectionsWithController: Int = 0,
+                routeID: UUID? = nil) {
         self.id = id
+        self.routeID = routeID
         self.direction = direction
         self.startedAt = startedAt
         self.finishedAt = finishedAt
@@ -159,6 +166,12 @@ public struct SpendingAnalytics: Sendable {
             cursor = next
         }
         return result
+    }
+
+    /// Итоги по дням (ключ — начало дня) для календаря истории.
+    public func dailyTotals(in interval: DateInterval) -> [Date: PeriodTotals] {
+        let grouped = Dictionary(grouping: trips(in: interval)) { calendar.startOfDay(for: $0.startedAt) }
+        return grouped.mapValues { totals(of: $0) }
     }
 
     /// Средняя стоимость рабочего дня = расходы / число дней, в которые были поездки.
