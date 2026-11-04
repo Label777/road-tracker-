@@ -13,6 +13,13 @@ import { DIRECTIONS, TRANSPORT, TRANSPORT_ICONS, TICKETED, OUTCOME_LABELS, ICONS
 import { mapView } from '../map.js';
 import { canImportHealth, importFromHealth } from '../health.js';
 
+/** Подпись к карте: какой цвет линии — какой транспорт. */
+function mapLegend(store, tripId) {
+  const types = [...new Set(store.segmentsOf(tripId).filter((s) => s.started_at != null).map((s) => s.transport_type))];
+  if (!types.length) return '';
+  return html`<div class="map-legend">${types.map((t) => html`<span class="tr-${t}"><i></i>${TRANSPORT[t]}</span>`)}</div>`;
+}
+
 const opt = (value, label, selected) => html`<option value="${value}" ${selected ? 'selected' : ''}>${label}</option>`;
 
 function inspectionFields(insp, prefix) {
@@ -128,7 +135,7 @@ export const editorView = {
 
         ${card('Комментарий', html`<textarea data-field="comment" rows="2" aria-label="Комментарий" placeholder="Например: пробка на мосту">${d.comment}</textarea>`)}
 
-        ${track.length > 1 ? card('Маршрут по GPS', html`<div class="map" data-map-track="${d.id}"></div>`) : ''}
+        ${track.length > 1 ? card('Маршрут по GPS', html`<div class="map" data-map-track="${d.id}"></div>${mapLegend(store, d.id)}`) : ''}
 
         ${issuesBlock(app, d)}
         ${d.id ? html`<button class="btn btn-danger" style="width:100%" data-action="delete">Удалить поездку</button>` : ''}
@@ -136,7 +143,7 @@ export const editorView = {
   },
   mount(app, root) {
     const el = root.querySelector('[data-map-track]');
-    if (el) mapView(el, { track: app.store.trackOf(el.dataset.mapTrack) });
+    if (el) mapView(el, { track: app.store.trackOf(el.dataset.mapTrack), segments: app.store.segmentsOf(el.dataset.mapTrack) });
   },
   /** Возвращает true, если нужна полная перерисовка (изменилась структура формы). */
   onInput(app, el) {

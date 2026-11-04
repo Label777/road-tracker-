@@ -41,7 +41,7 @@ function changeBlock(current, walking = '') {
       ${walking}
       <p class="t-caption" style="margin:var(--s-2) 0">${current ? 'Сменили транспорт?' : 'На чём едете?'}</p>
       <div class="change-buttons" role="group" aria-label="${current ? 'Сменить транспорт' : 'Выбрать транспорт'}">
-        ${options.map((t) => html`<button class="change-option" data-action="change-to" data-value="${t}">${TRANSPORT_ICONS[t]}<span>${TRANSPORT[t]}</span></button>`)}
+        ${options.map((t) => html`<button class="change-option tr-${t}" data-action="change-to" data-value="${t}">${TRANSPORT_ICONS[t]}<span>${TRANSPORT[t]}</span></button>`)}
         <button class="change-option" data-action="open-board">${ICONS.plus}<span>Другое</span></button>
       </div>
     </div>`;
@@ -109,7 +109,7 @@ function recording(app) {
           ${sectionTitle('Этапы', current ? html`<span class="t-caption">${TRANSPORT_ICONS[current.transport_type]}</span>` : '')}
           ${segments.length ? html`<div class="timeline">${segments.map((seg, i) => {
             const insp = inspections.find((x) => x.segment_id === seg.id);
-            return html`<div class="timeline-item ${i === segments.length - 1 && !seg.finished_at ? 'current' : ''}">
+            return html`<div class="timeline-item tr-${seg.transport_type} ${i === segments.length - 1 && !seg.finished_at ? 'current' : ''}">
               <div class="row-between"><span class="t-sub">${segmentTitle(seg)}</span><span class="t-num">${formatMoney(seg.cost)}</span></div>
               <div class="t-caption">${formatTime(seg.started_at)}${seg.finished_at ? ` – ${formatTime(seg.finished_at)}` : ' — сейчас'}${distOf(seg) ? ` · ${formatDistance(distOf(seg))}` : ''}${(() => {
                 if (seg.transport_type !== 'walk') return '';
@@ -191,7 +191,7 @@ export const tripView = {
     lm.attach(slot.parentElement);
     slot.remove();
     const places = app.store.live('locations').map((p) => ({ lat: p.latitude, lon: p.longitude, radius: p.radius }));
-    lm.update(app.store.trackOf(s.tripId), places);
+    lm.update(app.store.trackOf(s.tripId), places, app.store.segmentsOf(s.tripId));
   },
   actions: {
     'enable-gps': (app) => app.tracker.send({ type: 'enableGps' }),

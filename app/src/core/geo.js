@@ -110,3 +110,27 @@ export function shouldRecord(last, next, policy) {
   if (!last) return true;
   return next.t - last.t >= policy.minIntervalMs || distance(last, next) >= policy.minDistance;
 }
+
+/**
+ * Трек, разбитый на участки по этапам — для раскраски линии на карте цветом транспорта.
+ * Точка смены этапа входит в оба участка, чтобы линия не рвалась. Точки вне этапов
+ * (до первой отметки транспорта) — участок с type = null.
+ * @returns {{type: string|null, points: Sample[]}[]}
+ */
+export function trackRuns(track, segments) {
+  const sorted = [...track].sort((a, b) => a.t - b.t);
+  const timed = segments.filter((s) => s.started_at != null).sort((a, b) => a.started_at - b.started_at);
+  const typeAt = (t) => {
+    let type = null;
+    for (const s of timed) if (t >= s.started_at && (s.finished_at == null || t <= s.finished_at)) type = s.transport_type;
+    return type;
+  };
+  const runs = [];
+  for (const p of sorted) {
+    const type = typeAt(p.t);
+    const last = runs.at(-1);
+    if (last && last.type === type) last.points.push(p);
+    else runs.push({ type, points: last ? [last.points.at(-1), p] : [p] });
+  }
+  return runs;
+}

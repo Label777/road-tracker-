@@ -39,12 +39,12 @@ function transportSection(trips) {
   if (!sum) return emptyState({ text: 'Нет расходов за период.', compact: true });
   return html`
     <div class="stacked" role="img" aria-label="Доли расходов по транспорту">
-      ${items.map(([k, v], i) => html`<i style="width:${(v / sum) * 100}%;background:${PALETTE[i % PALETTE.length]};animation-delay:${i * 60}ms" title="${TRANSPORT[k]}"></i>`)}
+      ${items.map(([k, v], i) => html`<i class="tr-${k}" style="width:${(v / sum) * 100}%;background:var(--tr);animation-delay:${i * 60}ms" title="${TRANSPORT[k]}"></i>`)}
     </div>
-    ${items.map(([k, v], i) => expenseCard({
-      icon: html`<span style="color:${PALETTE[i % PALETTE.length]}">${TRANSPORT_ICONS[k]}</span>`,
+    ${items.map(([k, v]) => html`<div class="tr-${k} tr-bar">${expenseCard({
+      icon: TRANSPORT_ICONS[k],
       label: TRANSPORT[k], value: formatMoney(v), hint: pct(v / sum), share: v / sum,
-    }))}`;
+    })}</div>`)}`;
 }
 
 function routeLabeler(store) {

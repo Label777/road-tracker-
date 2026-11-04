@@ -77,7 +77,7 @@ function usualCard(app, dir) {
   return html`
     <button class="usual-card ${u.logged ? 'done' : ''}" data-action="record-usual" data-direction="${dir}"
       aria-label="Записать обычную поездку: ${DIRECTIONS[dir]}, ${formatTime(u.start)}–${formatTime(u.end)}, ${formatMoney(u.cost)}">
-      <span class="glyph">${first ? TRANSPORT_ICONS[first.transport] : ICONS.route}</span>
+      <span class="glyph ${first ? `tr-${first.transport}` : ''}">${first ? TRANSPORT_ICONS[first.transport] : ICONS.route}</span>
       <span class="main">
         <span class="title">Обычная поездка</span>
         <span class="sub">${DIRECTIONS[dir].toLowerCase()} · ${formatTime(u.start)}–${formatTime(u.end)} · ${segmentsText(u.segments)}</span>

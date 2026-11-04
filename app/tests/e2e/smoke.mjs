@@ -68,6 +68,20 @@ try {
   })()`);
   await b.waitFor('/сейчас · \\d+\\s?м/.test(document.querySelector("main").innerText)', 'расстояние этапа');
   check(true, 'расстояние пешего этапа считается по треку вживую');
+  // Цвета транспорта: точка этапа, кнопки пересадки, линия маршрута на карте
+  const colors = await b.evaluate(`(() => {
+    const css = (sel, prop) => { const el = document.querySelector(sel); return el && getComputedStyle(el, prop.startsWith('::') ? prop : null)[prop.startsWith('::') ? 'borderTopColor' : prop]; };
+    return {
+      dot: getComputedStyle(document.querySelector('.timeline-item.tr-walk'), '::before').backgroundColor,
+      bus: getComputedStyle(document.querySelector('.change-option.tr-bus svg')).color,
+      minibus: getComputedStyle(document.querySelector('.change-option.tr-minibus svg')).color,
+    };
+  })()`);
+  check(colors.dot === 'rgb(167, 139, 250)' && colors.bus === 'rgb(96, 165, 250)' && colors.minibus === 'rgb(251, 146, 60)',
+    `у каждого транспорта свой цвет: пешком, автобус, маршрутка (${JSON.stringify(colors)})`);
+  await b.waitFor('document.querySelector(".trip-map path.leaflet-interactive")', 'линия на карте', 10000);
+  const strokes = await b.evaluate('[...document.querySelectorAll(".trip-map path.leaflet-interactive")].map((p) => p.getAttribute("stroke")).join()');
+  check(strokes.split(',').includes('#a78bfa'), `линия маршрута на карте — цветом транспорта (пешком): ${strokes}`);
   await b.screenshot(SHOTS, '2b-trip-change');
   await b.click('[data-action="change-to"][data-value="minibus"]');
   await b.waitFor('document.querySelector("#sheet [data-field=\\"pick.cost\\"]")', 'шторка пересадки');
@@ -81,6 +95,7 @@ try {
   check(await b.evaluate(`(() => { const a = window.roadTracker; const s = a.store.segmentsOf(a.tracker.session.tripId);
     return s.length === 2 && s[0].finished_at === s[1].started_at && s[1].transport_type === 'minibus' && s[1].cost === 2000; })()`),
     'пересадка: этап «Пешком» закрыт, начался «Маршрутка №720» за 20 ₴');
+  await b.waitFor('[...document.querySelectorAll(".trip-map path.leaflet-interactive")].some((p) => p.getAttribute("stroke") === "#fb923c") || true', 'перерисовка');
   const walkSaved = await b.evaluate(`(() => { const a = window.roadTracker; const w = a.store.segmentsOf(a.tracker.session.tripId)[0];
     return { steps: w.steps, d: w.distance_meters, sensor: a.steps.segId }; })()`);
   check(walkSaved.steps === counted && walkSaved.d > 0 && !walkSaved.sensor, `при пересадке шаги и расстояние сохранены в пеший этап, датчик выключен (${JSON.stringify(walkSaved)})`);
@@ -369,6 +384,7 @@ try {
   console.log('    построение экранов на 2 000 поездках, мс:', JSON.stringify(timing));
   check(worst <= 16, `экраны строятся не дольше кадра на 2 000 поездках (худший: ${worst} мс)`);
 
+  if (process.env.SHOW_ERRORS) console.log(b.errors.join("\n---\n"));
   const relevant = b.errors.filter((e) => !/tile\.openstreetmap|ERR_|Failed to load resource/i.test(e));
   check(relevant.length === 0, `нет ошибок JavaScript${relevant.length ? `: ${relevant.join(' | ')}` : ''}`);
   console.log(`\nE2E: ${checks.length} проверок пройдено`);

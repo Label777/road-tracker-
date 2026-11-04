@@ -115,17 +115,28 @@ export const ICONS = {
 };
 
 /** Иконки видов транспорта (минималистичные, в одном стиле). */
+/**
+ * Цвет каждого вида транспорта — для иконок, линии маршрута на карте, этапов и графиков.
+ * Те же значения — CSS-переменные .tr-<вид> в styles.css (тест следит, чтобы совпадали).
+ */
+export const TRANSPORT_COLORS = {
+  walk: '#a78bfa', bus: '#60a5fa', minibus: '#fb923c', trolleybus: '#22d3ee', tram: '#f472b6', metro: '#ef4444',
+  train: '#818cf8', taxi: '#facc15', car: '#94a3b8', bicycle: '#4ade80', scooter: '#2dd4bf', other: '#9ca3af',
+};
+const trSvg = (type, path, size = 22) =>
+  raw(`<svg class="tr-icon tr-${type}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`);
+
 export const TRANSPORT_ICONS = {
-  walk: svg('<circle cx="13" cy="4" r="2"/><path d="M10 21l2-6-3-3 1-5 4 3 3 1M9 12l-2 3"/>'),
-  bus: svg('<rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M8 21v-3M16 21v-3"/><circle cx="8" cy="14.5" r=".5"/><circle cx="16" cy="14.5" r=".5"/>'),
-  minibus: svg('<path d="M3 16V9a3 3 0 013-3h9l5 5v5"/><path d="M3 11h17"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M9 17h6"/>'),
-  trolleybus: svg('<path d="M9 2l3 4M15 2l-3 4"/><rect x="4" y="6" width="16" height="12" rx="3"/><path d="M4 12h16M8 21v-3M16 21v-3"/>'),
-  tram: svg('<path d="M8 2h8M12 2v4"/><rect x="5" y="6" width="14" height="12" rx="3"/><path d="M5 12h14M8 22l2-4M16 22l-2-4"/>'),
-  metro: svg('<path d="M4 19L8 5l4 9 4-9 4 14"/>'),
-  train: svg('<rect x="5" y="3" width="14" height="14" rx="4"/><path d="M5 10h14M8 21l2-4M16 21l-2-4"/><circle cx="9" cy="13.5" r=".5"/><circle cx="15" cy="13.5" r=".5"/>'),
-  taxi: svg('<path d="M10 4h4l1 3"/><path d="M5 11l2-4h10l2 4"/><rect x="3" y="11" width="18" height="6" rx="2"/><path d="M6 17v2M18 17v2"/>'),
-  car: svg('<path d="M5 11l2-5h10l2 5"/><rect x="3" y="11" width="18" height="6" rx="2"/><path d="M6 17v2M18 17v2"/><circle cx="7.5" cy="14" r=".5"/><circle cx="16.5" cy="14" r=".5"/>'),
-  bicycle: svg('<circle cx="6" cy="16" r="3.5"/><circle cx="18" cy="16" r="3.5"/><path d="M6 16l4-8h5l3 8M10 8l3 8M9 5h3"/>'),
-  scooter: svg('<circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 18h9l2-12h3M17 6h-2"/>'),
-  other: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12h.01M12 12h.01M16 12h.01"/>'),
+  walk: trSvg('walk', '<circle cx="13" cy="4" r="2"/><path d="M10 21l2-6-3-3 1-5 4 3 3 1M9 12l-2 3"/>'),
+  bus: trSvg('bus', '<rect x="4" y="3" width="16" height="15" rx="3"/><path d="M4 11h16M8 21v-3M16 21v-3"/><circle cx="8" cy="14.5" r=".5"/><circle cx="16" cy="14.5" r=".5"/>'),
+  minibus: trSvg('minibus', '<path d="M3 16V9a3 3 0 013-3h9l5 5v5"/><path d="M3 11h17"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M9 17h6"/>'),
+  trolleybus: trSvg('trolleybus', '<path d="M9 2l3 4M15 2l-3 4"/><rect x="4" y="6" width="16" height="12" rx="3"/><path d="M4 12h16M8 21v-3M16 21v-3"/>'),
+  tram: trSvg('tram', '<path d="M8 2h8M12 2v4"/><rect x="5" y="6" width="14" height="12" rx="3"/><path d="M5 12h14M8 22l2-4M16 22l-2-4"/>'),
+  metro: trSvg('metro', '<path d="M4 19L8 5l4 9 4-9 4 14"/>'),
+  train: trSvg('train', '<rect x="5" y="3" width="14" height="14" rx="4"/><path d="M5 10h14M8 21l2-4M16 21l-2-4"/><circle cx="9" cy="13.5" r=".5"/><circle cx="15" cy="13.5" r=".5"/>'),
+  taxi: trSvg('taxi', '<path d="M10 4h4l1 3"/><path d="M5 11l2-4h10l2 4"/><rect x="3" y="11" width="18" height="6" rx="2"/><path d="M6 17v2M18 17v2"/>'),
+  car: trSvg('car', '<path d="M5 11l2-5h10l2 5"/><rect x="3" y="11" width="18" height="6" rx="2"/><path d="M6 17v2M18 17v2"/><circle cx="7.5" cy="14" r=".5"/><circle cx="16.5" cy="14" r=".5"/>'),
+  bicycle: trSvg('bicycle', '<circle cx="6" cy="16" r="3.5"/><circle cx="18" cy="16" r="3.5"/><path d="M6 16l4-8h5l3 8M10 8l3 8M9 5h3"/>'),
+  scooter: trSvg('scooter', '<circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 18h9l2-12h3M17 6h-2"/>'),
+  other: trSvg('other', '<circle cx="12" cy="12" r="9"/><path d="M8 12h.01M12 12h.01M16 12h.01"/>'),
 };

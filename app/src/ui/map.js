@@ -2,6 +2,35 @@
 // Leaflet лежит в самом сайте (vendor/) и работает офлайн; тайлы уже виденных мест
 // service worker хранит в кэше. Без сети и кэша формы работают — координаты вводятся вручную.
 
+import { trackRuns } from '../core/geo.js';
+import { TRANSPORT_COLORS } from './format.js';
+
+const runColor = (type) => (type ? TRANSPORT_COLORS[type] : ACCENT_COLOR);
+const ACCENT_COLOR = '#2ef07a';
+
+const MAX_RUNS = 12;
+const lineStyle = (weight) => ({ weight, opacity: 0.95, lineCap: 'round', lineJoin: 'round' });
+
+/**
+ * Линия трека, раскрашенная по этапам. Линии берутся из готового набора и только
+ * получают новые точки и цвет: добавлять слои в карту на каждом обновлении нельзя —
+ * Leaflet падает, если карта в этот момент без размера (перерисовка экрана).
+ */
+function drawRuns(lines, track, segments) {
+  const runs = trackRuns(track, segments).filter((r) => r.points.length >= 2);
+  // участков больше, чем линий (очень много пересадок) — последние склеиваются
+  while (runs.length > lines.length) {
+    const extra = runs.pop();
+    runs.at(-1).points.push(...extra.points);
+  }
+  lines.forEach((line, i) => {
+    const r = runs[i];
+    line.setLatLngs(r ? r.points.map((p) => [p.lat, p.lon]) : []);
+    if (r) line.setStyle({ color: runColor(r.type) });
+  });
+  return runs;
+}
+
 const LEAFLET = new URL('../../vendor/leaflet/leaflet', import.meta.url).href;
 const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 let loading = null;
@@ -48,10 +77,12 @@ export async function mapView(el, opts) {
   }).addTo(map);
 
   if (opts.track?.length) {
-    const line = L.polyline(opts.track.map((p) => [p.lat, p.lon]), { color: ACCENT, weight: 4 }).addTo(map);
-    L.circleMarker(line.getLatLngs()[0], { radius: 6, color: ACCENT, fillOpacity: 1 }).addTo(map);
-    L.circleMarker(line.getLatLngs().at(-1), { radius: 6, color: '#fff', fillOpacity: 1 }).addTo(map);
-    map.fitBounds(line.getBounds(), { padding: [20, 20] });
+    const pts = opts.track.map((p) => [p.lat, p.lon]);
+    map.fitBounds(L.latLngBounds(pts), { padding: [20, 20] }); // сначала вид — потом слои
+    const lines = Array.from({ length: MAX_RUNS }, () => L.polyline([], lineStyle(4)).addTo(map));
+    const runs = drawRuns(lines, opts.track, opts.segments ?? []);
+    L.circleMarker(pts[0], { radius: 6, color: runColor(runs[0]?.type), fillOpacity: 1 }).addTo(map);
+    L.circleMarker(pts.at(-1), { radius: 6, color: '#fff', fillOpacity: 1 }).addTo(map);
     return null;
   }
 
@@ -109,13 +140,13 @@ export class LiveMap {
     L.tileLayer(TILE_URL, {
       maxZoom: 19, crossOrigin: true, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
     }).addTo(this.map);
-    this.line = L.polyline([], { color: ACCENT, weight: 5, opacity: 0.95, lineCap: 'round' }).addTo(this.map);
+    this.lines = Array.from({ length: MAX_RUNS }, () => L.polyline([], lineStyle(5)).addTo(this.map));
     this.dot = L.circleMarker([0, 0], { radius: 8, color: '#0b0d10', weight: 3, fillColor: ACCENT, fillOpacity: 1 });
     this.map.on('dragstart', () => { this.follow = false; });
   }
 
   /** @param {{lat:number, lon:number}[]} track @param {{lat:number, lon:number, radius:number}[]} places */
-  async update(track, places = []) {
+  async update(track, places = [], segments = []) {
     await this.ready;
     if (!this.map) return;
     const L = this.L;
@@ -123,12 +154,14 @@ export class LiveMap {
       this.places = places.map((p) => L.circle([p.lat, p.lon], { radius: p.radius, color: '#8d949e', weight: 1, fillOpacity: 0.06 }).addTo(this.map));
     }
     const pts = track.map((p) => [p.lat, p.lon]);
-    this.line.setLatLngs(pts);
+    // Линия по этапам: каждый участок — цветом своего транспорта
+    const runs = drawRuns(this.lines, track, segments);
     if (!pts.length) return;
     const last = pts.at(-1);
+    this.dot.setStyle({ fillColor: runColor(runs.at(-1)?.type) });
     this.dot.setLatLng(last).addTo(this.map);
     if (this.follow) {
-      if (pts.length > 1 && !this.fitted) { this.map.fitBounds(this.line.getBounds(), { padding: [40, 40], maxZoom: 16 }); this.fitted = true; }
+      if (pts.length > 1 && !this.fitted) { this.map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 16 }); this.fitted = true; }
       else this.map.panTo(last, { animate: true });
     }
   }

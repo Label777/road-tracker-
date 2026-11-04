@@ -33,7 +33,7 @@ export const segmented = (options, value, { action, field, label = '' } = {}) =>
 export const transportSelector = (value, { action = 'pick-transport', only = null } = {}) => html`
   <div class="transport-selector" role="group" aria-label="Вид транспорта">
     ${Object.entries(TRANSPORT).filter(([k]) => !only || only.includes(k)).map(([k, v]) => html`
-      <button type="button" class="transport-option" aria-pressed="${k === value}" data-action="${action}" data-value="${k}">
+      <button type="button" class="transport-option tr-${k}" aria-pressed="${k === value}" data-action="${action}" data-value="${k}">
         ${TRANSPORT_ICONS[k]}<span>${v}</span>
       </button>`)}
   </div>`;

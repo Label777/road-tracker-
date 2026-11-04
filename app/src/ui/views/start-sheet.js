@@ -74,7 +74,7 @@ export const transportSheet = {
         : DIRECTIONS[p.direction]}</p>
       <div class="start-modes" role="group" aria-label="Транспорт">
         ${MAIN_TRANSPORT.map((t) => html`
-          <button class="start-mode ${p.transport === t ? 'on' : ''}" aria-pressed="${p.transport === t}" data-action="pick-mode" data-value="${t}">
+          <button class="start-mode tr-${t} ${p.transport === t ? 'on' : ''}" aria-pressed="${p.transport === t}" data-action="pick-mode" data-value="${t}">
             ${TRANSPORT_ICONS[t]}<span>${TRANSPORT[t]}</span></button>`)}
       </div>
       ${p.more

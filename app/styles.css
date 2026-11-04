@@ -228,7 +228,7 @@ nav.tabs a.live::before {
   border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-elevated); color: var(--text-primary);
   font: var(--t-caption); cursor: pointer;
 }
-.change-option svg { width: 26px; height: 26px; color: var(--accent); }
+.change-option svg { width: 26px; height: 26px; }
 .change-option:active { transform: scale(0.97); }
 
 .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
@@ -607,3 +607,28 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 .trip-card .sub.movement { display: flex; align-items: center; gap: 4px; }
 .trip-card .sub.movement svg { width: 14px; height: 14px; flex: none; }
 .walk-stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+
+/* ---------- Цвета видов транспорта ----------
+   Те же значения — TRANSPORT_COLORS в src/ui/format.js (для линий на карте). */
+.tr-walk { --tr: #a78bfa; } .tr-bus { --tr: #60a5fa; } .tr-minibus { --tr: #fb923c; } .tr-trolleybus { --tr: #22d3ee; }
+.tr-tram { --tr: #f472b6; } .tr-metro { --tr: #ef4444; } .tr-train { --tr: #818cf8; } .tr-taxi { --tr: #facc15; }
+.tr-car { --tr: #94a3b8; } .tr-bicycle { --tr: #4ade80; } .tr-scooter { --tr: #2dd4bf; } .tr-other { --tr: #9ca3af; }
+.tr-icon { color: var(--tr); }
+/* Выбранный вид транспорта подсвечивается своим цветом */
+.transport-option[aria-pressed="true"], .start-mode[aria-pressed="true"] {
+  border-color: var(--tr, var(--accent)); background: color-mix(in srgb, var(--tr, var(--accent)) 16%, var(--surface-primary)); color: var(--text-primary);
+}
+.change-option[class*="tr-"] { border-color: color-mix(in srgb, var(--tr) 40%, var(--border)); }
+/* Этапы в пути и в истории: точка этапа — цветом транспорта */
+.timeline-item[class*="tr-"]::before { border-color: var(--tr); }
+.timeline-item.current[class*="tr-"]::before { background: var(--tr); border-color: var(--tr); box-shadow: 0 0 0 4px color-mix(in srgb, var(--tr) 25%, transparent); }
+.usual-card .glyph[class*="tr-"] { background: color-mix(in srgb, var(--tr) 22%, var(--surface-elevated)); }
+.usual-card.done .glyph[class*="tr-"] { background: var(--surface-elevated); }
+.map-legend { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); margin-top: var(--s-3); font: var(--t-caption); color: var(--text-secondary); }
+.map-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.map-legend i { width: 18px; height: 4px; border-radius: 2px; background: var(--tr); }
+.tr-bar .expense-card .bar i { background: var(--tr); }
+/* Светлая тема: более тёмные оттенки для светлых цветов, чтобы иконки читались */
+[data-theme="light"] .tr-taxi { --tr: #ca8a04; } [data-theme="light"] .tr-bicycle { --tr: #16a34a; }
+[data-theme="light"] .tr-scooter { --tr: #0d9488; } [data-theme="light"] .tr-trolleybus { --tr: #0891b2; }
+[data-theme="light"] .tr-minibus { --tr: #ea580c; } [data-theme="light"] .tr-walk { --tr: #7c3aed; }
