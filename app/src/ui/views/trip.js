@@ -16,7 +16,7 @@ import { LiveMap } from '../map.js';
 import { sheetHeader } from '../sheet.js';
 import { frequentCosts, routeNumbers } from '../suggest.js';
 import { finishTrip, finishedText } from '../actions.js';
-import { openChangeSheet, MAIN_TRANSPORT } from './start-sheet.js';
+import { openChangeSheet, openEditSheet, MAIN_TRANSPORT } from './start-sheet.js';
 import { canImportHealth, importFromHealth } from '../health.js';
 
 /** Пока идём пешком: откуда шаги и как включить датчик. */
@@ -106,11 +106,12 @@ function recording(app) {
         </div>
 
         <section>
-          ${sectionTitle('Этапы', current ? html`<span class="t-caption">${TRANSPORT_ICONS[current.transport_type]}</span>` : '')}
+          ${sectionTitle('Этапы', segments.length ? html`<span class="t-caption">нажмите, чтобы изменить</span>` : '')}
           ${segments.length ? html`<div class="timeline">${segments.map((seg, i) => {
             const insp = inspections.find((x) => x.segment_id === seg.id);
-            return html`<div class="timeline-item tr-${seg.transport_type} ${i === segments.length - 1 && !seg.finished_at ? 'current' : ''}">
-              <div class="row-between"><span class="t-sub">${segmentTitle(seg)}</span><span class="t-num">${formatMoney(seg.cost)}</span></div>
+            return html`<div class="timeline-item editable tr-${seg.transport_type} ${i === segments.length - 1 && !seg.finished_at ? 'current' : ''}"
+              role="button" tabindex="0" data-action="edit-segment" data-id="${seg.id}" aria-label="Изменить этап: ${segmentTitle(seg)}, ${formatMoney(seg.cost)}">
+              <div class="row-between"><span class="t-sub">${segmentTitle(seg)}</span><span class="t-num">${formatMoney(seg.cost)}<span class="edit-mark" aria-hidden="true">${ICONS.edit}</span></span></div>
               <div class="t-caption">${formatTime(seg.started_at)}${seg.finished_at ? ` – ${formatTime(seg.finished_at)}` : ' — сейчас'}${distOf(seg) ? ` · ${formatDistance(distOf(seg))}` : ''}${(() => {
                 if (seg.transport_type !== 'walk') return '';
                 if (seg.id === current?.id && sensing) return html` · <span data-steps-live>${sensor.count.toLocaleString('ru-RU')}</span> ${plural(sensor.count, 'шаг', 'шага', 'шагов')}`;
@@ -232,6 +233,7 @@ export const tripView = {
       await app.saveSettings({ stepSensor: true });
       app.haptic('success');
     },
+    'edit-segment': (app, el) => { app.haptic(); openEditSheet(app, el.dataset.id); },
     'change-to': (app, el) => { app.haptic(); openChangeSheet(app, { transport: el.dataset.value }); },
     'open-inspection': (app) => app.openSheet(inspectionSheet),
   },

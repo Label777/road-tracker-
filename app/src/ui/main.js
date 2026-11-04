@@ -226,6 +226,11 @@ async function boot() {
   });
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && app.ui.sheet) closeSheet(app);
+    // Элементы role="button" (этапы в пути) нажимаются и с клавиатуры
+    if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('[role="button"][data-action]')) {
+      ev.preventDefault();
+      ev.target.click();
+    }
   });
 
   const GLOBAL_ACTIONS = {

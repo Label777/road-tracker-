@@ -5,7 +5,8 @@
 import { html } from '../html.js';
 import { primaryButton, transportSelector } from '../components.js';
 import { formatMoney, parseMoney, moneyToInput } from '../../core/money.js';
-import { DIRECTIONS, TRANSPORT, TRANSPORT_ICONS, TICKETED, ICONS } from '../format.js';
+import { DIRECTIONS, TRANSPORT, TRANSPORT_ICONS, TICKETED, ICONS, formatTime } from '../format.js';
+import { zonedParts, zonedTime, startOfDay, addDays } from '../../core/time.js';
 import { sheetHeader } from '../sheet.js';
 import { frequentCosts, routeNumbers } from '../suggest.js';
 import { startTrip } from '../actions.js';
@@ -49,6 +50,30 @@ export function openChangeSheet(app, { transport = null, template = null } = {})
   return app.openSheet(transportSheet);
 }
 
+/** Правка этапа (в пути): транспорт, цена, номер, время начала; удаление. */
+export function openEditSheet(app, segmentId) {
+  const seg = app.store.data.trip_segments.get(segmentId);
+  if (!seg) return null;
+  app.ui.pick = {
+    mode: 'edit', segmentId, transport: seg.transport_type, number: seg.transport_number ?? '', cost: seg.cost,
+    more: !MAIN_TRANSPORT.includes(seg.transport_type), time: toTimeInput(seg.started_at),
+  };
+  return app.openSheet(transportSheet);
+}
+
+const toTimeInput = (ms) => (ms == null ? '' : formatTime(ms).replace(/\s/g, ''));
+
+/** «ЧЧ:ММ» → момент: из соседних дней берётся ближайший к прежнему началу этапа. */
+function fromTimeInput(value, around) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const cands = [-1, 0, 1].map((d) => {
+    const day = zonedParts(addDays(startOfDay(around), d));
+    return zonedTime(day.year, day.month, day.day, +m[1], +m[2]);
+  });
+  return cands.reduce((a, b) => (Math.abs(b - around) < Math.abs(a - around) ? b : a));
+}
+
 /** Момент смены: не раньше начала текущего этапа (и поездки). */
 function changeAt(app, ago) {
   const s = app.tracker.session;
@@ -62,16 +87,18 @@ export const transportSheet = {
   render(app) {
     const p = app.ui.pick;
     const change = p.mode === 'change';
+    const edit = p.mode === 'edit';
     const free = FREE.has(p.transport);
     const costs = free ? [] : frequentCosts(app.store, p.transport);
     const numbers = TICKETED.has(p.transport) && !p.number
       ? routeNumbers(app.store, '', 6).filter((x) => x.transport_type === p.transport).slice(0, 4) : [];
     const current = change ? app.store.segmentsOf(app.tracker.session.tripId).at(-1) : null;
     return html`
-      ${sheetHeader(change ? 'На что пересели?' : 'На чём едете?')}
-      <p class="t-callout muted" style="margin:-8px 0 var(--s-4)">${change
-        ? (current ? `Сейчас: ${TRANSPORT[current.transport_type]}${current.transport_number ? ` №${current.transport_number}` : ''} — этот этап закончится` : 'Первый этап поездки')
-        : DIRECTIONS[p.direction]}</p>
+      ${sheetHeader(edit ? 'Этап' : change ? 'На что пересели?' : 'На чём едете?')}
+      <p class="t-callout muted" style="margin:-8px 0 var(--s-4)">${edit ? 'Исправьте транспорт, цену или время начала'
+        : change
+          ? (current ? `Сейчас: ${TRANSPORT[current.transport_type]}${current.transport_number ? ` №${current.transport_number}` : ''} — этот этап закончится` : 'Первый этап поездки')
+          : DIRECTIONS[p.direction]}</p>
       <div class="start-modes" role="group" aria-label="Транспорт">
         ${MAIN_TRANSPORT.map((t) => html`
           <button class="start-mode tr-${t} ${p.transport === t ? 'on' : ''}" aria-pressed="${p.transport === t}" data-action="pick-mode" data-value="${t}">
@@ -98,11 +125,20 @@ export const transportSheet = {
           <div class="chips" style="margin-top:6px">${AGO.map((m) => html`
             <button class="chip ${p.ago === m ? 'on' : ''}" aria-pressed="${p.ago === m}" data-action="pick-ago" data-value="${m}">${m ? `${m} мин назад` : 'Сейчас'}</button>`)}</div></div>` : ''}
 
-      <div style="margin-top:var(--s-6)">${primaryButton(change ? 'Пересел' : 'Поехали', { action: 'pick-go', icon: change ? ICONS.repeat : ICONS.play })}</div>`;
+      ${edit ? html`
+        <label class="field" style="margin:var(--s-5) 0 0"><span>Начало этапа</span>
+          <input type="time" data-field="pick.time" value="${p.time}"></label>
+        <p class="t-caption" style="margin-top:6px">Предыдущий этап закончится в это же время.</p>
+        <div class="btn-row" style="margin-top:var(--s-6)">
+          <button class="btn btn-danger" data-action="pick-delete">${ICONS.trash}Удалить</button>
+          ${primaryButton('Сохранить', { action: 'pick-save', icon: ICONS.check })}
+        </div>`
+        : html`<div style="margin-top:var(--s-6)">${primaryButton(change ? 'Пересел' : 'Поехали', { action: 'pick-go', icon: change ? ICONS.repeat : ICONS.play })}</div>`}`;
   },
   onInput(app, el) {
     const p = app.ui.pick;
     if (el.dataset.field === 'pick.number') p.number = el.value;
+    if (el.dataset.field === 'pick.time') p.time = el.value;
     if (el.dataset.field === 'pick.cost') {
       const v = el.value.trim() === '' ? 0 : parseMoney(el.value);
       el.classList.toggle('invalid', v == null);
@@ -116,6 +152,40 @@ export const transportSheet = {
     'pick-cost': (app, el) => { app.ui.pick.cost = +el.dataset.value; app.haptic(); app.renderSheet(); },
     'pick-number': (app, el) => { app.ui.pick.number = el.dataset.value; app.renderSheet(); },
     'pick-ago': (app, el) => { app.ui.pick.ago = +el.dataset.value; app.haptic(); app.renderSheet(); },
+    'pick-save': async (app) => {
+      const p = app.ui.pick;
+      const seg = app.store.data.trip_segments.get(p.segmentId);
+      const input = document.querySelector('#sheet [data-field="pick.cost"]');
+      if (input && input.value.trim() !== '' && parseMoney(input.value) == null) {
+        app.haptic('warning');
+        app.toast('Проверьте цену: например, 15 или 15,50');
+        return;
+      }
+      const started = p.time ? fromTimeInput(p.time, seg.started_at ?? Date.now()) : null;
+      if (p.time && started == null) { app.toast('Время — в формате ЧЧ:ММ'); return; }
+      await app.store.updateLiveSegment(p.segmentId, {
+        transport_type: p.transport,
+        transport_number: TICKETED.has(p.transport) ? p.number : null,
+        cost: FREE.has(p.transport) ? 0 : (p.cost ?? 0),
+        ...(started != null && started !== seg.started_at && Math.abs(started - seg.started_at) >= 60_000 ? { started_at: started } : {}),
+      });
+      app.haptic('success');
+      app.closeSheet();
+      app.toast('Этап изменён');
+    },
+    'pick-delete': async (app) => {
+      const p = app.ui.pick;
+      const seg = app.store.data.trip_segments.get(p.segmentId);
+      const ok = await app.confirm({
+        title: 'Удалить этап?',
+        text: `${TRANSPORT[seg.transport_type]}${seg.cost ? ` · ${formatMoney(seg.cost)}` : ''}. Его время отойдёт предыдущему этапу.`,
+        confirm: 'Удалить', danger: true,
+      });
+      if (!ok) return;
+      await app.store.deleteLiveSegment(p.segmentId);
+      app.haptic('success');
+      app.toast('Этап удалён');
+    },
     'pick-go': async (app) => {
       const p = app.ui.pick;
       const input = document.querySelector('#sheet [data-field="pick.cost"]');

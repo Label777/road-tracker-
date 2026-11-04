@@ -96,6 +96,38 @@ try {
     return s.length === 2 && s[0].finished_at === s[1].started_at && s[1].transport_type === 'minibus' && s[1].cost === 2000; })()`),
     'пересадка: этап «Пешком» закрыт, начался «Маршрутка №720» за 20 ₴');
   await b.waitFor('[...document.querySelectorAll(".trip-map path.leaflet-interactive")].some((p) => p.getAttribute("stroke") === "#fb923c") || true', 'перерисовка');
+  // Правка этапа в пути: нажать на этап → цена и номер → сохранить; затем вернуть как было
+  const tripNow = () => b.evaluate('window.roadTracker.store.segmentsOf(window.roadTracker.tracker.session.tripId).map((s) => [s.transport_type, s.transport_number, s.cost].join(":")).join(",")');
+  await b.click('.timeline-item.tr-minibus');
+  await b.waitFor('document.querySelector("#sheet [data-action=pick-save]")', 'шторка этапа');
+  await b.screenshot(SHOTS, '2d-edit-stage');
+  await b.setField('#sheet [data-field="pick.cost"]', '25');
+  await b.setField('#sheet [data-field="pick.number"]', '721');
+  await b.click('#sheet [data-action="pick-save"]');
+  await b.waitFor('!document.querySelector("#sheet .sheet")', 'шторка закрыта');
+  check((await tripNow()).endsWith('minibus:721:2500'), 'этап в пути исправлен: №721, 25 ₴');
+  await b.click('.timeline-item.tr-minibus');
+  await b.waitFor('document.querySelector("#sheet [data-action=pick-save]")', 'шторка этапа');
+  await b.setField('#sheet [data-field="pick.cost"]', '20');
+  await b.setField('#sheet [data-field="pick.number"]', '720');
+  await b.click('#sheet [data-action="pick-save"]');
+  await b.waitFor('!document.querySelector("#sheet .sheet")', 'шторка закрыта');
+  await sleep(400);
+  // Лишний этап: добавить трамвай и удалить его — маршрутка снова текущая
+  await b.click('[data-action="open-board"]');
+  await b.waitFor('document.querySelector("#sheet [data-action=pick-mode][data-value=tram]")', 'шторка пересадки');
+  await b.click('#sheet [data-action="pick-mode"][data-value="tram"]');
+  await b.click('#sheet [data-action="pick-go"]');
+  await b.waitFor('document.querySelector(".timeline-item.tr-tram")', 'этап трамвая');
+  await b.click('.timeline-item.tr-tram');
+  await b.waitFor('document.querySelector("#sheet [data-action=pick-delete]")', 'шторка этапа');
+  await b.click('#sheet [data-action="pick-delete"]');
+  await b.waitFor('document.querySelector("#sheet [data-action=sheet-confirm]")', 'подтверждение');
+  await b.click('#sheet [data-action="sheet-confirm"]');
+  await b.waitFor('!document.querySelector(".timeline-item.tr-tram")', 'этап удалён');
+  check((await tripNow()) === 'walk::0,minibus:720:2000' && (await b.evaluate('!!document.querySelector(".timeline-item.tr-minibus.current")')),
+    'лишний этап удалён — маршрутка снова текущий этап');
+
   const walkSaved = await b.evaluate(`(() => { const a = window.roadTracker; const w = a.store.segmentsOf(a.tracker.session.tripId)[0];
     return { steps: w.steps, d: w.distance_meters, sensor: a.steps.segId }; })()`);
   check(walkSaved.steps === counted && walkSaved.d > 0 && !walkSaved.sensor, `при пересадке шаги и расстояние сохранены в пеший этап, датчик выключен (${JSON.stringify(walkSaved)})`);

@@ -279,3 +279,57 @@ describe('Синхронизация', () => {
     assert.equal(back.user_id, undefined);
   });
 });
+
+// ------------------------------------------------------------------ правка этапов в пути
+import { test as t2 } from 'node:test';
+import assert2 from 'node:assert/strict';
+import { Store as Store2 } from '../src/data/store.js';
+import { MemoryBackend as Mem2 } from '../src/data/db.js';
+
+t2('правка и удаление этапа в пути: соседние этапы остаются встык', async () => {
+  const MIN = 60_000;
+  let now = Date.parse('2026-11-04T07:00:00Z');
+  const store = new Store2(new Mem2(), { clock: () => now, timeZone: 'Europe/Kyiv' });
+  await store.load();
+  const t0 = now;
+  await store.startTrip({ tripId: 'tr', direction: 'to_work', mode: 'manual', startedAt: t0 });
+  await store.appendLiveSegment('tr', { transport_type: 'walk' }, t0);
+  now = t0 + 10 * MIN;
+  await store.appendLiveSegment('tr', { transport_type: 'bus', cost: 1500 }, now);
+  now = t0 + 30 * MIN;
+  await store.appendLiveSegment('tr', { transport_type: 'metro', cost: 800 }, now);
+  await store.recordInspection('tr', 'ticket_checked', now);
+  now = t0 + 40 * MIN;
+  const [walk, bus, metro] = store.segmentsOf('tr');
+
+  // транспорт, номер, цена и время начала автобуса; конец пешего этапа следует за ним
+  await store.updateLiveSegment(bus.id, { transport_type: 'minibus', transport_number: ' 720 ', cost: 2000, started_at: t0 + 12 * MIN });
+  const [w1, b1] = store.segmentsOf('tr');
+  assert2.equal(b1.transport_type, 'minibus');
+  assert2.equal(b1.transport_number, '720');
+  assert2.equal(b1.cost, 2000);
+  assert2.equal(b1.started_at, t0 + 12 * MIN);
+  assert2.equal(w1.finished_at, t0 + 12 * MIN);
+  assert2.equal(store.tripCost(store.trip('tr')), 2800);
+
+  await assert2.rejects(store.updateLiveSegment(bus.id, { started_at: t0 - MIN }), /раньше предыдущего/);
+  await assert2.rejects(store.updateLiveSegment(bus.id, { started_at: t0 + 35 * MIN }), /позже следующего/);
+  await assert2.rejects(store.updateLiveSegment(metro.id, { started_at: t0 + 50 * MIN }), /не наступило/);
+  await assert2.rejects(store.updateLiveSegment(bus.id, { cost: -1 }), /отрицательной/);
+
+  // удаление последнего этапа: предыдущий снова текущий, отметка контролёра удалена
+  await store.deleteLiveSegment(metro.id);
+  const after = store.segmentsOf('tr');
+  assert2.deepEqual(after.map((x) => x.transport_type), ['walk', 'minibus']);
+  assert2.equal(after[1].finished_at, null);
+  assert2.equal(store.inspectionsOf('tr').length, 0);
+
+  // удаление среднего: время отходит предыдущему, позиции без дыр
+  await store.appendLiveSegment('tr', { transport_type: 'tram', cost: 800 }, now);
+  await store.deleteLiveSegment(b1.id);
+  const left = store.segmentsOf('tr');
+  assert2.deepEqual(left.map((x) => [x.transport_type, x.position]), [['walk', 0], ['tram', 1]]);
+  assert2.equal(left[0].finished_at, now);
+  assert2.ok(store.queue().some((op) => op.entityId === b1.id && op.kind === 'delete'));
+  void walk;
+});

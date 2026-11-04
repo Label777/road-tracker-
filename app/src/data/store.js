@@ -342,6 +342,87 @@ export class Store {
     return id;
   }
 
+  /**
+   * Правка этапа во время записи. Этапы идут встык: новое время начала этапа — это и конец
+   * предыдущего. Время ограничено соседями (не раньше начала предыдущего этапа и поездки,
+   * не позже начала следующего и текущего момента). Расстояния затронутых этапов
+   * сбрасываются — они пересчитаются по треку.
+   */
+  async updateLiveSegment(segmentId, patch) {
+    const seg = this.data.trip_segments.get(segmentId);
+    if (!seg || seg.deleted_at) throw new Error('Этап не найден');
+    const trip = this.trip(seg.trip_id);
+    const list = this.segmentsOf(seg.trip_id);
+    const i = list.findIndex((x) => x.id === segmentId);
+    const prev = list[i - 1] ?? null;
+    const next = list[i + 1] ?? null;
+    const now = this.clock();
+    const next1 = { ...seg };
+    if (patch.transport_type) next1.transport_type = patch.transport_type;
+    if ('transport_number' in patch) next1.transport_number = trimOrNull(patch.transport_number);
+    if ('cost' in patch) {
+      if (!(Number.isInteger(patch.cost) && patch.cost >= 0)) throw new Error('Цена не может быть отрицательной');
+      next1.cost = patch.cost;
+    }
+    if (next1.transport_type !== 'walk') next1.steps = null;
+    const timeChanged = patch.started_at != null && patch.started_at !== seg.started_at;
+    if (timeChanged) {
+      const lower = prev ? prev.started_at + 1000 : trip?.started_at ?? 0;
+      const upper = next?.started_at != null ? Math.min(next.started_at - 1000, now) : now;
+      if (patch.started_at < lower) throw new Error(prev ? 'Этап не может начаться раньше предыдущего' : 'Этап не может начаться раньше поездки');
+      if (patch.started_at > upper) throw new Error(next ? 'Этап не может начаться позже следующего' : 'Это время ещё не наступило');
+      next1.started_at = patch.started_at;
+      next1.distance_meters = null;
+    }
+    await this.transact((tx) => {
+      tx.put('trip_segments', { ...next1, updated_at: now });
+      tx.enqueue('trip_segments', seg.id, 'upsert');
+      if (timeChanged && prev) {
+        tx.put('trip_segments', { ...prev, finished_at: next1.started_at, distance_meters: null, updated_at: now });
+        tx.enqueue('trip_segments', prev.id, 'upsert');
+      }
+      if (trip) {
+        tx.put('trips', { ...trip, updated_at: now });
+        tx.enqueue('trips', trip.id, 'upsert');
+      }
+    });
+  }
+
+  /**
+   * Удалить этап во время записи. Его время отходит предыдущему этапу (а если удалён
+   * последний — предыдущий снова становится текущим). Отметка контролёра на этапе удаляется.
+   */
+  async deleteLiveSegment(segmentId) {
+    const seg = this.data.trip_segments.get(segmentId);
+    if (!seg || seg.deleted_at) return;
+    const trip = this.trip(seg.trip_id);
+    const list = this.segmentsOf(seg.trip_id);
+    const i = list.findIndex((x) => x.id === segmentId);
+    const prev = list[i - 1] ?? null;
+    const now = this.clock();
+    await this.transact((tx) => {
+      tx.put('trip_segments', { ...seg, deleted_at: now, updated_at: now });
+      tx.enqueue('trip_segments', seg.id, 'delete');
+      if (prev) {
+        tx.put('trip_segments', { ...prev, finished_at: seg.finished_at ?? null, distance_meters: null, updated_at: now });
+        tx.enqueue('trip_segments', prev.id, 'upsert');
+      }
+      // Позиции и номера пересадок — без дыр
+      list.slice(i + 1).forEach((x, k) => {
+        tx.put('trip_segments', { ...x, position: i + k, transfer_number: i + k, updated_at: now });
+        tx.enqueue('trip_segments', x.id, 'upsert');
+      });
+      for (const insp of this.inspectionsOf(seg.trip_id).filter((x) => x.segment_id === seg.id)) {
+        tx.put('inspections', { ...insp, deleted_at: now, updated_at: now });
+        tx.enqueue('inspections', insp.id, 'delete');
+      }
+      if (trip) {
+        tx.put('trips', { ...trip, updated_at: now });
+        tx.enqueue('trips', trip.id, 'upsert');
+      }
+    });
+  }
+
   /** Шаги этапа по датчику движения (сохраняются периодически во время ходьбы). */
   async setSegmentSteps(segmentId, steps) {
     const seg = this.data.trip_segments.get(segmentId);

@@ -632,3 +632,9 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 [data-theme="light"] .tr-taxi { --tr: #ca8a04; } [data-theme="light"] .tr-bicycle { --tr: #16a34a; }
 [data-theme="light"] .tr-scooter { --tr: #0d9488; } [data-theme="light"] .tr-trolleybus { --tr: #0891b2; }
 [data-theme="light"] .tr-minibus { --tr: #ea580c; } [data-theme="light"] .tr-walk { --tr: #7c3aed; }
+/* Этап в пути можно нажать и изменить */
+.timeline-item.editable { cursor: pointer; border-radius: var(--r-md); margin: 0 calc(-1 * var(--s-2)); padding-left: var(--s-2); padding-right: var(--s-2); transition: background var(--dur-fast); }
+.timeline-item.editable:active, .timeline-item.editable:focus-visible { background: var(--surface-primary); }
+.timeline-item.editable::before { left: calc(-28px + var(--s-2)); }
+.edit-mark { display: inline-flex; margin-left: 6px; color: var(--text-tertiary); vertical-align: -3px; }
+.edit-mark svg { width: 15px; height: 15px; }
