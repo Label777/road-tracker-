@@ -1,5 +1,0 @@
-// Общие настройки сборки. Секреты окружения — в Secrets.xcconfig (в .gitignore).
-// Скопируйте Secrets.example.xcconfig → Secrets.xcconfig и заполните.
-SUPABASE_URL =
-SUPABASE_ANON_KEY =
-#include? "Secrets.xcconfig"

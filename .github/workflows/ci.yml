@@ -11,15 +11,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  core:
-    name: Доменное ядро (swift test)
+  unit:
+    name: Логика, хранилище, синхронизация (node --test)
     runs-on: ubuntu-latest
-    container: swift:6.1
     steps:
       - uses: actions/checkout@v4
-      - name: Тесты RoadTrackerCore
-        working-directory: Packages/RoadTrackerCore
-        run: swift test
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Тесты
+        working-directory: app
+        run: node --test tests/*.test.js
+
+  e2e:
+    name: Сайт в настоящем Chrome
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Сквозные проверки
+        working-directory: app
+        run: |
+          python3 -m http.server 8080 >/dev/null 2>&1 &
+          sleep 1
+          SHOTS_DIR=../screenshots node tests/e2e/smoke.mjs "$(command -v google-chrome)"
+      - name: Скриншоты
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots
+          if-no-files-found: ignore
 
   database:
     name: Схема Supabase (PostgreSQL)
@@ -30,59 +54,3 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql
       - name: Тесты схемы и RLS
         run: supabase/tests/run_local.sh
-
-  ios:
-    name: iOS — сборка и тесты на симуляторе
-    runs-on: macos-15
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - name: Выбрать Xcode
-        run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
-          xcodebuild -version
-      - name: XcodeGen
-        run: |
-          brew install xcodegen
-          xcodegen generate
-      - name: Выбрать симулятор iPhone
-        id: sim
-        run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c '
-          import json,sys
-          d=json.load(sys.stdin)["devices"]
-          ios=[(k,v) for k,v in d.items() if "iOS" in k]
-          ios.sort(key=lambda kv: [int(x) for x in kv[0].split("iOS-")[-1].split("-")])
-          for k,v in reversed(ios):
-              phones=[x for x in v if x["name"].startswith("iPhone")]
-              if phones: print(phones[0]["udid"]); break
-          ')
-          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
-          echo "Simulator: $UDID"
-      - name: Сборка и тесты
-        run: |
-          set -o pipefail
-          xcodebuild test \
-            -project RoadTracker.xcodeproj \
-            -scheme RoadTracker \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
-            -skipPackagePluginValidation \
-            -skipMacroValidation \
-            CODE_SIGNING_ALLOWED=NO \
-            | tee xcodebuild.log | grep -E "error:|warning: .*concurrency|Test Suite|Test case|passed|failed|\*\* (BUILD|TEST)" || true
-          grep -q "\*\* TEST SUCCEEDED \*\*" xcodebuild.log
-      - name: Предупреждения компилятора (код проекта)
-        if: always()
-        run: |
-          grep -E "warning:" xcodebuild.log | grep -v "/SourcePackages/" | sed -E 's#.*/road-tracker-/##' | sort -u | head -100 || true
-          echo "Всего уникальных предупреждений в коде проекта: $(grep -E 'warning:' xcodebuild.log | grep -v '/SourcePackages/' | sort -u | wc -l)"
-      - name: Ошибки компиляции
-        if: failure()
-        run: grep -E "error:" xcodebuild.log | sort -u | head -100 || true
-      - name: Сохранить лог
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xcodebuild-log
-          path: xcodebuild.log
-          if-no-files-found: ignore

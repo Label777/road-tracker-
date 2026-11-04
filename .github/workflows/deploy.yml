@@ -1,0 +1,50 @@
+# Публикация сайта на GitHub Pages.
+# Один раз включите Pages: Settings → Pages → Build and deployment → Source: «GitHub Actions».
+# После этого каждый push в main публикует папку app/ (после прохождения тестов).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - working-directory: app
+        run: node --test tests/*.test.js
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Собрать сайт (без тестов)
+        run: |
+          mkdir -p _site
+          cp -r app/index.html app/styles.css app/sw.js app/manifest.webmanifest app/icons app/src _site/
+          # Новая версия кэша при каждой публикации — iPhone получит обновление
+          sed -i "s/const VERSION = 'rt-v1';/const VERSION = 'rt-${GITHUB_SHA::8}';/" _site/sw.js
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
