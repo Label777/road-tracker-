@@ -238,6 +238,12 @@ enum RoadTrackerSchema {
 
     @MainActor
     static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
+        if !inMemory {
+            // При первом запуске папки Application Support ещё нет — SwiftData
+            // пишет ошибку CoreData и «восстанавливается». Создаём её заранее.
+            try FileManager.default.createDirectory(at: .applicationSupportDirectory,
+                                                    withIntermediateDirectories: true)
+        }
         let configuration = ModelConfiguration("RoadTracker", isStoredInMemoryOnly: inMemory)
         return try ModelContainer(for: Schema(models), configurations: configuration)
     }

@@ -71,6 +71,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             | tee xcodebuild.log | grep -E "error:|warning: .*concurrency|Test Suite|Test case|passed|failed|\*\* (BUILD|TEST)" || true
           grep -q "\*\* TEST SUCCEEDED \*\*" xcodebuild.log
+      - name: Предупреждения компилятора (код проекта)
+        if: always()
+        run: |
+          grep -E "warning:" xcodebuild.log | grep -v "/SourcePackages/" | sed -E 's#.*/road-tracker-/##' | sort -u | head -100 || true
+          echo "Всего уникальных предупреждений в коде проекта: $(grep -E 'warning:' xcodebuild.log | grep -v '/SourcePackages/' | sort -u | wc -l)"
       - name: Ошибки компиляции
         if: failure()
         run: grep -E "error:" xcodebuild.log | sort -u | head -100 || true
