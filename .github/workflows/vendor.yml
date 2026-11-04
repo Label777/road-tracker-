@@ -1,0 +1,42 @@
+# Кладёт сторонние библиотеки в репозиторий (app/vendor/), чтобы сайт не зависел от CDN
+# и карта работала офлайн. Запускается вручную: Actions → Vendor → Run workflow.
+name: Vendor
+
+on:
+  workflow_dispatch:
+    inputs:
+      leaflet:
+        description: Версия Leaflet
+        default: 1.9.4
+
+permissions:
+  contents: write
+
+jobs:
+  leaflet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Скачать Leaflet из npm (проверка целостности — средствами npm)
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          (cd "$tmp" && npm pack "leaflet@${{ inputs.leaflet }}" --silent >/dev/null && tar xzf leaflet-*.tgz)
+          rm -rf app/vendor/leaflet
+          mkdir -p app/vendor/leaflet/images
+          cp "$tmp/package/dist/leaflet.js" "$tmp/package/dist/leaflet.css" "$tmp/package/LICENSE" app/vendor/leaflet/
+          cp "$tmp/package/dist/images/"*.png app/vendor/leaflet/images/
+          echo "${{ inputs.leaflet }}" > app/vendor/leaflet/VERSION
+          (cd app/vendor/leaflet && sha256sum leaflet.js leaflet.css > SHA256SUMS)
+          cat app/vendor/leaflet/SHA256SUMS
+      - name: Закоммитить
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/vendor
+          if git diff --cached --quiet; then echo "Без изменений"; exit 0; fi
+          git commit -m "Leaflet ${{ inputs.leaflet }} в app/vendor (без CDN)"
+          git push
