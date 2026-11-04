@@ -11,14 +11,22 @@ import { gpsPermission } from '../permissions.js';
 import { sheetHeader } from '../sheet.js';
 import { suggestedDirection, startTrip, recordUsual, usualToday } from '../actions.js';
 import { saveBackup } from '../backup.js';
+import { openStartSheet } from './start-sheet.js';
 
 export { suggestedDirection };
 
-/** Старт поездки с главной (с анимацией и тактильным откликом). */
-export async function quickStart(app, direction = app.ui.homeDirection ?? suggestedDirection()) {
-  document.querySelector('.start-orb')?.classList.add('launch');
-  app.haptic('success');
-  await startTrip(app, { direction });
+/**
+ * «Старт» на главной: шторка «На чём едете?» (транспорт и цена), затем запуск
+ * с анимацией и переход на экран поездки.
+ */
+export function quickStart(app, direction = app.ui.homeDirection ?? suggestedDirection()) {
+  app.haptic();
+  return openStartSheet(app, direction, {
+    onStarted: () => {
+      document.querySelector('.start-orb')?.classList.add('launch');
+      setTimeout(() => app.navigate('#/trip'), matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 380);
+    },
+  });
 }
 
 function greeting(now) {

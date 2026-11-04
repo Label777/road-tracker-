@@ -29,19 +29,36 @@ try {
   // Старт → активная поездка (направление задаём явно — тест не зависит от времени суток)
   await b.click('[data-action="home-direction"][data-value="to_home"]');
   await b.click('[data-action="quick-start"]');
+  await b.waitFor('document.querySelector("#sheet .start-modes")', 'шторка «На чём едете?»');
+  const modes = await b.evaluate('[...document.querySelectorAll("#sheet .start-mode")].map((e) => e.innerText.trim()).join(",")');
+  check(modes === 'Автобус,Маршрутка,Пешком', `при старте выбор: ${modes}`);
+  await b.click('#sheet [data-action="pick-mode"][data-value="bus"]');
+  check(await b.evaluate('!!document.querySelector("#sheet [data-field=\\"pick.cost\\"]")'), 'для автобуса — поле цены');
+  await b.screenshot(SHOTS, '1b-start-sheet');
+  await b.click('#sheet [data-action="pick-mode"][data-value="walk"]');
+  check(await b.evaluate('!document.querySelector("#sheet [data-field=\\"pick.cost\\"]")'), 'пешком — без цены');
+  await b.click('#sheet [data-action="pick-go"]');
   await b.waitFor('location.hash === "#/trip" && document.querySelector(".trip-clock")', 'экран поездки');
+  check(await b.evaluate(`(() => { const a = window.roadTracker; const s = a.store.segmentsOf(a.tracker.session.tripId); return s.length === 1 && s[0].transport_type === 'walk' && s[0].cost === 0; })()`), 'поездка началась с выбранным этапом «Пешком»');
   check(await has('Завершить'), 'запись поездки идёт');
   check(await b.evaluate('!!document.querySelector("nav.tabs a.center.live[href=\'#/trip\']")'), 'во время записи центр меню — «Поездка»');
 
   // Этап через шторку
-  await b.click('[data-action="open-board"]');
-  await b.waitFor('document.querySelector("#sheet [data-field=\\"board.cost\\"]")', 'шторка этапа');
-  await b.click('#sheet [data-action="board-transport"][data-value="minibus"]');
-  await b.setField('#sheet [data-field="board.transport_number"]', '720');
-  await b.setField('#sheet [data-field="board.cost"]', '20');
-  await b.click('#sheet [data-action="board-save"]');
+  // В пути: «Сменили транспорт?» — пешком → маршрутка
+  check(await has('Сейчас: Пешком'), 'в пути видно текущий транспорт');
+  await b.screenshot(SHOTS, '2b-trip-change');
+  await b.click('[data-action="change-to"][data-value="minibus"]');
+  await b.waitFor('document.querySelector("#sheet [data-field=\\"pick.cost\\"]")', 'шторка пересадки');
+  check(await b.evaluate('document.querySelector("#sheet").innerText.includes("Когда пересели")'), 'пересадка: можно указать, когда пересели');
+  await b.setField('#sheet [data-field="pick.number"]', '720');
+  await b.setField('#sheet [data-field="pick.cost"]', '20');
+  await b.click('#sheet [data-action="pick-ago"][data-value="2"]');
+  await b.screenshot(SHOTS, '2c-change-sheet');
+  await b.click('#sheet [data-action="pick-go"]');
   await b.waitFor('document.querySelector("main").innerText.includes("Маршрутка №720")', 'этап добавлен');
-  check(true, 'этап «Маршрутка №720» добавлен через шторку');
+  check(await b.evaluate(`(() => { const a = window.roadTracker; const s = a.store.segmentsOf(a.tracker.session.tripId);
+    return s.length === 2 && s[0].finished_at === s[1].started_at && s[1].transport_type === 'minibus' && s[1].cost === 2000; })()`),
+    'пересадка: этап «Пешком» закрыт, начался «Маршрутка №720» за 20 ₴');
 
   // Контролёр через шторку
   await b.click('[data-action="open-inspection"]');

@@ -13,6 +13,23 @@ import { LiveMap } from '../map.js';
 import { sheetHeader } from '../sheet.js';
 import { frequentCosts, routeNumbers } from '../suggest.js';
 import { finishTrip, finishedText } from '../actions.js';
+import { openChangeSheet, MAIN_TRANSPORT } from './start-sheet.js';
+
+/** «Сменил транспорт»: что сейчас и пересадка в одно-два касания. */
+function changeBlock(current) {
+  const options = MAIN_TRANSPORT.filter((t) => t !== current?.transport_type);
+  return html`
+    <div class="change-block">
+      <p class="t-callout">${current
+        ? html`Сейчас: <b>${segmentTitle(current)}</b> · с ${formatTime(current.started_at)}`
+        : 'Отметьте, на чём едете — так учтутся цена и пересадки.'}</p>
+      <p class="t-caption" style="margin:var(--s-2) 0">${current ? 'Сменили транспорт?' : 'На чём едете?'}</p>
+      <div class="change-buttons" role="group" aria-label="${current ? 'Сменить транспорт' : 'Выбрать транспорт'}">
+        ${options.map((t) => html`<button class="change-option" data-action="change-to" data-value="${t}">${TRANSPORT_ICONS[t]}<span>${TRANSPORT[t]}</span></button>`)}
+        <button class="change-option" data-action="open-board">${ICONS.plus}<span>Другое</span></button>
+      </div>
+    </div>`;
+}
 
 // ------------------------------------------------------------------ запись
 
@@ -66,9 +83,9 @@ function recording(app) {
               <div class="row-between"><span class="t-sub">${segmentTitle(seg)}</span><span class="t-num">${formatMoney(seg.cost)}</span></div>
               <div class="t-caption">${formatTime(seg.started_at)}${seg.finished_at ? ` – ${formatTime(seg.finished_at)}` : ' — сейчас'}${insp ? ` · ${OUTCOME_LABELS[insp.outcome]}` : ''}</div>
             </div>`;
-          })}</div>` : html`<p class="t-callout muted">Сели в транспорт — отметьте этап, чтобы учесть стоимость и пересадки.</p>`}
+          })}</div>` : ''}
+          ${changeBlock(current && !current.finished_at ? current : null)}
           <div class="btn-row" style="margin-top:var(--s-3)">
-            ${secondaryButton('Сел в транспорт', { action: 'open-board', icon: TRANSPORT_ICONS.bus })}
             ${secondaryButton('Контролёр', { action: 'open-inspection', icon: ICONS.shield })}
           </div>
         </section>
@@ -83,53 +100,6 @@ function recording(app) {
 }
 
 // ------------------------------------------------------------------ шторки
-
-function boardingSheet(app, template) {
-  app.ui.board = {
-    transport_type: template?.transport_type ?? 'minibus',
-    transport_number: template?.transport_number ?? '',
-    cost: template?.cost ?? 0,
-  };
-  return {
-    label: 'Новый этап',
-    render: (a) => {
-      const b = a.ui.board;
-      const costs = frequentCosts(a.store, b.transport_type);
-      const numbers = b.transport_number ? [] : routeNumbers(a.store, '', 4).filter((x) => x.transport_type === b.transport_type);
-      return html`
-        ${sheetHeader('Сел в транспорт')}
-        <div class="stack">
-          ${transportSelector(b.transport_type, { action: 'board-transport' })}
-          <label class="field"><span>Номер маршрута</span>
-            <input data-field="board.transport_number" value="${b.transport_number}" placeholder="Например, 720" autocomplete="off" inputmode="text" enterkeyhint="done"></label>
-          ${numbers.length ? html`<div class="chips">${numbers.map((n) => html`<button class="chip" data-action="board-number" data-value="${n.transport_number}">№${n.transport_number}</button>`)}</div>` : ''}
-          <label class="field"><span>Стоимость</span>
-            <span class="input-affix"><input class="numeric-input" data-field="board.cost" inputmode="decimal" value="${moneyToInput(b.cost)}" placeholder="0"><span class="affix">₴</span></span></label>
-          ${costs.length ? html`<div class="chips">${costs.map((c) => html`<button class="chip ${c === b.cost ? 'on' : ''}" data-action="board-cost" data-value="${c}">${formatMoney(c)}</button>`)}</div>` : ''}
-          ${primaryButton('Добавить этап', { action: 'board-save', size: 'lg' })}
-        </div>`;
-    },
-    onInput: (a, el) => {
-      const b = a.ui.board;
-      if (el.dataset.field === 'board.cost') {
-        const m = parseMoney(el.value || '0');
-        el.classList.toggle('invalid', m == null);
-        if (m != null) b.cost = m;
-      } else b.transport_number = el.value;
-      return false;
-    },
-    actions: {
-      'board-transport': (a, el) => { a.ui.board.transport_type = el.dataset.value; a.haptic(); a.renderSheet(); },
-      'board-number': (a, el) => { a.ui.board.transport_number = el.dataset.value; a.renderSheet(); },
-      'board-cost': (a, el) => { a.ui.board.cost = +el.dataset.value; a.haptic(); a.renderSheet(); },
-      'board-save': async (a) => {
-        await a.store.appendLiveSegment(a.tracker.session.tripId, a.ui.board, Date.now());
-        a.haptic('success');
-        a.closeSheet();
-      },
-    },
-  };
-}
 
 const inspectionSheet = {
   label: 'Контролёр',
@@ -172,7 +142,7 @@ export const tripView = {
   render(app) {
     // Старт — на главной; без записи этот экран не нужен
     if (!app.tracker.session) {
-      queueMicrotask(() => location.replace('#/home'));
+      queueMicrotask(() => { if (location.hash === '#/trip') location.replace('#/home'); });
       return '';
     }
     return recording(app);
@@ -205,13 +175,15 @@ export const tripView = {
       }
     },
     'change-direction': (app) => app.openSheet(directionSheet),
+    // «Другое»: следующий этап шаблона, если поездка по шаблону, иначе полный список транспорта
     'open-board': (app) => {
       const s = app.tracker.session;
       const trip = app.store.trip(s.tripId);
       const route = trip?.route_id ? app.store.data.routes.get(trip.route_id) : null;
       const next = route?.segments[app.store.segmentsOf(s.tripId).length] ?? null;
-      app.openSheet(boardingSheet(app, next));
+      openChangeSheet(app, next ? { template: next } : { transport: 'metro' });
     },
+    'change-to': (app, el) => { app.haptic(); openChangeSheet(app, { transport: el.dataset.value }); },
     'open-inspection': (app) => app.openSheet(inspectionSheet),
   },
 };

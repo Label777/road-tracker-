@@ -8,8 +8,11 @@ export const suggestedDirection = (now = Date.now()) => (zonedParts(now).hour < 
 
 const gpsMode = (app, gps) => ((gps ?? app.ui.startGps ?? app.settings().gpsByDefault) ? 'gps' : 'manual');
 
-/** Начать запись. routeId — шаблон: первый этап открывается сразу. */
-export async function startTrip(app, { direction, routeId = null, gps = null } = {}) {
+/**
+ * Начать запись. routeId — шаблон: первый этап открывается сразу.
+ * segment — первый этап, выбранный при старте ({transport_type, cost, transport_number}).
+ */
+export async function startTrip(app, { direction, routeId = null, gps = null, segment = null } = {}) {
   if (app.tracker.session) return false;
   const route = routeId ? app.store.data.routes.get(routeId) : null;
   if (routeId && (!route || route.deleted_at)) throw new Error('Шаблон маршрута не найден — возможно, он удалён.');
@@ -18,6 +21,8 @@ export async function startTrip(app, { direction, routeId = null, gps = null } =
   if (id && route) {
     await app.store.updateTrip(id, { route_id: route.id });
     if (route.segments[0]) await app.store.appendLiveSegment(id, route.segments[0], Date.now());
+  } else if (id && segment) {
+    await app.store.appendLiveSegment(id, segment, Date.now());
   }
   return true;
 }

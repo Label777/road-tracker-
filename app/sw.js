@@ -4,7 +4,7 @@
 // и страница предлагает обновиться (сообщение 'skip-waiting').
 // Тайлы карты — отдельный кэш с ограничением размера: карта знакомых мест открывается офлайн.
 // VERSION и SHELL обновляет scripts/build-sw.sh (версия = хеш содержимого файлов).
-const VERSION = 'rt-2ab81e0558';
+const VERSION = 'rt-1a8763d841';
 const TILES = 'rt-tiles';
 const TILE_LIMIT = 600;
 const TILE_HOST = 'tile.openstreetmap.org';
@@ -55,6 +55,7 @@ const SHELL = [
     'src/ui/views/profile.js',
     'src/ui/views/quick-add.js',
     'src/ui/views/shortcuts.js',
+    'src/ui/views/start-sheet.js',
     'src/ui/views/trip.js',
     'vendor/leaflet/images/layers-2x.png',
     'vendor/leaflet/images/layers.png',

@@ -208,6 +208,29 @@ nav.tabs a.live::before {
 .transport-option[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .transport-option svg { width: 24px; height: 24px; }
 
+/* «На чём едете?» при старте — три крупных варианта */
+.start-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-2); }
+.start-mode {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-2); min-height: 96px;
+  border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--surface-primary); color: var(--text-secondary);
+  font: var(--t-subheading); cursor: pointer; transition: all var(--dur) var(--ease-out);
+}
+.start-mode svg { width: 32px; height: 32px; }
+.start-mode[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.start-mode:active { transform: scale(0.97); }
+
+/* В пути: «Сменили транспорт?» */
+.change-block { margin-top: var(--s-4); padding: var(--s-4); border-radius: var(--r-lg); background: var(--surface-primary); border: 1px solid var(--border); }
+.change-block b { color: var(--text-primary); font-weight: 600; }
+.change-buttons { display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: var(--s-2); }
+.change-option {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: var(--s-3) 0; min-height: 68px;
+  border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-elevated); color: var(--text-primary);
+  font: var(--t-caption); cursor: pointer;
+}
+.change-option svg { width: 26px; height: 26px; color: var(--accent); }
+.change-option:active { transform: scale(0.97); }
+
 .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .chip {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 var(--s-4);

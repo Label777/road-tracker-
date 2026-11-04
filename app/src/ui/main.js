@@ -229,11 +229,7 @@ async function boot() {
   const GLOBAL_ACTIONS = {
     'dismiss-notice': () => tracker.dismissNotice(),
     'open-trip': () => app.navigate('#/trip'),
-    'quick-start': async () => {
-      await quickStart(app);
-      // дать анимации старта доиграть, затем открыть поездку
-      setTimeout(() => app.navigate('#/trip'), matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 380);
-    },
+    'quick-start': () => quickStart(app),
     'quick-add': () => openQuickAdd(app),
     'sheet-close': () => closeSheet(app, false),
     // Подсказка графика: точечное обновление DOM, без перерисовки (анимации не перезапускаются)
