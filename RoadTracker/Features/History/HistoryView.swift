@@ -308,16 +308,12 @@ private struct FilterSheet: View {
                 }
                 Section("Направление") {
                     ForEach(TripDirection.allCases, id: \.self) { d in
-                        toggle(d.title, isOn: filter.directions.contains(d)) { on in
-                            if on { filter.directions.insert(d) } else { filter.directions.remove(d) }
-                        }
+                        membershipToggle(d.title, d, in: $filter.directions)
                     }
                 }
                 Section("Транспорт") {
                     ForEach(TransportType.allCases, id: \.self) { t in
-                        toggle(t.title, isOn: filter.transports.contains(t)) { on in
-                            if on { filter.transports.insert(t) } else { filter.transports.remove(t) }
-                        }
+                        membershipToggle(t.title, t, in: $filter.transports)
                     }
                 }
                 Section("Стоимость поездки") {
@@ -368,7 +364,14 @@ private struct FilterSheet: View {
         return DateInterval(start: start, end: end)
     }
 
-    private func toggle(_ title: String, isOn: Bool, set: @escaping (Bool) -> Void) -> some View {
-        Toggle(title, isOn: Binding(get: { isOn }, set: set))
+    /// Переключатель «входит ли значение в множество». Binding — Sendable, поэтому
+    /// замыкания не захватывают неизолированное состояние (чисто для Swift 6).
+    private func membershipToggle<T: Hashable & Sendable>(_ title: String, _ value: T,
+                                                          in set: Binding<Set<T>>) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { set.wrappedValue.contains(value) },
+            set: { on in
+                if on { set.wrappedValue.insert(value) } else { set.wrappedValue.remove(value) }
+            }))
     }
 }
