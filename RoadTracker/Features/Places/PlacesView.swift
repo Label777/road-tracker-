@@ -170,23 +170,38 @@ struct PlaceEditorView: View {
         guard !text.isEmpty else { return }
         searching = true
         defer { searching = false }
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = text
-        request.region = MKCoordinateRegion(center: center, latitudinalMeters: 50_000, longitudinalMeters: 50_000)
         do {
-            let response = try await MKLocalSearch(request: request).start()
-            guard let item = response.mapItems.first else {
+            guard let hit = try await Self.findPlace(text, nearLatitude: draft.latitude, longitude: draft.longitude) else {
                 message = String(localized: "Ничего не найдено.")
                 return
             }
-            let coordinate = item.placemark.coordinate
-            draft.latitude = coordinate.latitude
-            draft.longitude = coordinate.longitude
-            if draft.address.isEmpty || !isNew { draft.address = item.placemark.title ?? text }
-            if draft.name.isEmpty { draft.name = item.name ?? text }
+            draft.latitude = hit.latitude
+            draft.longitude = hit.longitude
+            if draft.address.isEmpty || !isNew { draft.address = hit.address ?? text }
+            if draft.name.isEmpty { draft.name = hit.name ?? text }
             camera = Self.position(for: draft)
         } catch {
             message = String(localized: "Поиск недоступен: \(error.localizedDescription)")
         }
+    }
+
+    private struct SearchHit: Sendable {
+        let latitude: Double
+        let longitude: Double
+        let name: String?
+        let address: String?
+    }
+
+    /// Поиск выполняется вне главного актора, наружу отдаются только Sendable-значения
+    /// (MKLocalSearch.Response в Swift 6 нельзя передавать между изоляциями).
+    private nonisolated static func findPlace(_ text: String, nearLatitude lat: Double, longitude lon: Double) async throws -> SearchHit? {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = text
+        request.region = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                                            latitudinalMeters: 50_000, longitudinalMeters: 50_000)
+        let response = try await MKLocalSearch(request: request).start()
+        guard let item = response.mapItems.first else { return nil }
+        let c = item.placemark.coordinate
+        return SearchHit(latitude: c.latitude, longitude: c.longitude, name: item.name, address: item.placemark.title)
     }
 }
