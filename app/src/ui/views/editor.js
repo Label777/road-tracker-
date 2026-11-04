@@ -9,8 +9,9 @@ const card = (title, body) => _h`<section>${title ? _h`<h2 class="group-title">$
 import { formatMoney, parseMoney, moneyToInput } from '../../core/money.js';
 import { formatDuration } from '../../core/time.js';
 import { issueMessage } from '../../core/editing.js';
-import { DIRECTIONS, TRANSPORT, TICKETED, OUTCOME_LABELS, ICONS, toInputDateTime, fromInputDateTime } from '../format.js';
+import { DIRECTIONS, TRANSPORT, TRANSPORT_ICONS, TICKETED, OUTCOME_LABELS, ICONS, toInputDateTime, fromInputDateTime } from '../format.js';
 import { mapView } from '../map.js';
+import { canImportHealth, importFromHealth } from '../health.js';
 
 const opt = (value, label, selected) => html`<option value="${value}" ${selected ? 'selected' : ''}>${label}</option>`;
 
@@ -111,6 +112,11 @@ export const editorView = {
         ${card(`Этапы маршрута · пересадок: ${transfers}`, html`
           ${d.segments.map((s, i) => segmentCard(s, i, d.segments.length))}
           ${secondaryButton('Добавить этап', { action: 'seg-add', icon: ICONS.plus })}
+          ${d.id && canImportHealth(store, store.trip(d.id)) ? html`
+            <button class="btn btn-secondary" style="width:100%;margin-top:var(--s-2)" data-action="health-import">${TRANSPORT_ICONS.walk}Шаги из «Здоровья»</button>
+            <p class="t-caption" style="margin-top:6px">${app.settings().healthShortcut
+              ? 'Запустит команду iPhone и подставит шаги за время пеших этапов.'
+              : html`Нужна команда «Road Tracker шаги» — <a href="#/shortcuts">как настроить за 2 минуты</a>.`}</p>` : ''}
         `)}
 
         ${card('Стоимость', html`
@@ -204,6 +210,10 @@ export const editorView = {
       if (!(await app.confirm({ title: 'Удалить поездку?', text: 'Этапы и отметки контролёров тоже будут удалены.', confirm: 'Удалить', danger: true }))) return;
       await app.store.deleteTrip(app.ui.draft.id);
       app.back();
+    },
+    'health-import': (app) => {
+      if (!app.settings().healthShortcut) { app.navigate('#/shortcuts'); return; }
+      return importFromHealth(app, app.ui.draft.id);
     },
     'fill-template': (app) => {
       const r = app.store.data.routes.get(app.ui.draft.route_id);

@@ -37,7 +37,7 @@ const ROUTES = [
   [/^#\/route\/(?<id>[\w-]+)$/, routeEditorView],
   [/^#\/design$/, designView],
   [/^#\/shortcuts$/, shortcutsView],
-  [/^#\/do\/(?<verb>\w+)(?:\?(?<query>.*))?$/, doView],
+  [/^#\/do\/(?<verb>[\w-]+)(?:\?(?<query>.*))?$/, doView],
 ];
 
 // Пять вкладок; в центре — «Добавить» (шторка быстрого добавления), а во время записи — «Поездка».

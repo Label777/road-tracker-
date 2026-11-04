@@ -137,6 +137,7 @@ export const profileView = {
           ${motionSupported() ? cell({ icon: TRANSPORT_ICONS.walk, title: 'Считать шаги датчиком', sub: 'Пока идёте пешком и сайт открыт', toggle: settings.stepSensor, field: 'stepSensor' }) : ''}
           <label class="cell"><span class="icon">${ICONS.profile}</span><span class="main"><span>Рост</span><small>Длина шага: ${String(store.stride()).replace('.', ',')} м</small></span>
             <span class="cell-input"><input data-field="heightCm" inputmode="numeric" value="${settings.heightCm ?? ''}" placeholder="175" maxlength="3" autocomplete="off"><span>см</span></span></label>
+          ${cell({ icon: ICONS.bolt, title: 'Шаги из «Здоровья»', sub: settings.healthShortcut ? 'Команда настроена' : 'Настроить команду iPhone', href: '#/shortcuts' })}
         `, 'Без датчика шаги оцениваются по расстоянию GPS и длине шага (≈0,415 × рост), а без GPS — по времени ходьбы. Оценки помечены знаком «≈».')}
 
         ${notif === 'unsupported' ? '' : group('Уведомления', html`

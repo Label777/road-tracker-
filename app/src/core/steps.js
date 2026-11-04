@@ -39,7 +39,7 @@ export function tripSteps(segments, opts = {}) {
 }
 
 export const STEP_SOURCE = {
-  sensor: 'по датчику телефона',
+  sensor: 'по датчику телефона или из «Здоровья»',
   distance: 'по расстоянию GPS и длине шага',
   time: 'по времени ходьбы, ≈100 шагов в минуту',
 };
@@ -77,4 +77,47 @@ export function createStepDetector({ minInterval = 250, maxInterval = 2000, thre
       return counted;
     },
   };
+}
+
+// ------------------------------------------------------------------ шаги из «Здоровья»
+// Сайт не может читать «Здоровье» напрямую; это делает команда iPhone. Ей передаются интервалы
+// пеших этапов в «минутах назад» (команда отсчитывает от текущего времени — так не нужно
+// разбирать даты), она возвращает сумму шагов по каждому: «95|80;40|30» → «820;410».
+
+export const HEALTH_SHORTCUT = 'Road Tracker шаги';
+
+/** Пешие этапы с началом и концом → интервалы в минутах назад от now. */
+export function healthRanges(segments, now = Date.now()) {
+  return segments
+    .filter((s) => s.transport_type === 'walk' && s.started_at != null && s.finished_at != null && s.finished_at > s.started_at)
+    .map((s) => ({
+      id: s.id,
+      fromMin: Math.ceil((now - s.started_at) / 60_000),
+      toMin: Math.max(0, Math.floor((now - s.finished_at) / 60_000)),
+    }));
+}
+
+export const healthInput = (ranges) => ranges.map((r) => `${r.fromMin}|${r.toMin}`).join(';');
+
+/** Число из ответа команды: «1 234», «820,0», «820.0» → 1234 / 820; мусор → null. */
+const toSteps = (x) => {
+  const t = String(x).replace(/[\s\u00a0\u202f]/g, '').replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  const n = Math.round(Number(t));
+  return n <= 200_000 ? n : null;
+};
+
+/** Ответ команды → Map(id этапа → шаги). Число значений должно совпасть с числом интервалов. */
+export function parseHealthResult(result, ranges) {
+  if (result == null) throw new Error('Команда ничего не вернула. Последним действием должно быть «Объединить текст».');
+  // Пустое значение — за этот интервал в «Здоровье» нет шагов (0)
+  const parts = String(result).replace(/\s+$/, '').split(/;|\n/);
+  if (parts.length !== ranges.length) throw new Error(`Команда вернула ${parts.length} значений вместо ${ranges.length}. Проверьте шаги команды.`);
+  const out = new Map();
+  parts.forEach((p, i) => {
+    const n = p.trim() === '' ? 0 : toSteps(p);
+    if (n == null) throw new Error(`Команда вернула «${p.trim()}» — ожидалось число шагов.`);
+    out.set(ranges[i].id, n);
+  });
+  return out;
 }

@@ -17,6 +17,7 @@ import { sheetHeader } from '../sheet.js';
 import { frequentCosts, routeNumbers } from '../suggest.js';
 import { finishTrip, finishedText } from '../actions.js';
 import { openChangeSheet, MAIN_TRANSPORT } from './start-sheet.js';
+import { canImportHealth, importFromHealth } from '../health.js';
 
 /** Пока идём пешком: откуда шаги и как включить датчик. */
 function walkingNote(app, estimate, sensing) {
@@ -199,7 +200,13 @@ export const tripView = {
     finish: async (app) => {
       const trip = await finishTrip(app);
       app.haptic('success');
-      app.toast(finishedText(app, trip));
+      // Пешком без датчика — предложить шаги из «Здоровья» (если команда настроена)
+      const walkNoSteps = trip && app.store.segmentsOf(trip.id).some((x) => x.transport_type === 'walk' && x.steps == null);
+      if (walkNoSteps && app.settings().healthShortcut && canImportHealth(app.store, trip)) {
+        app.toast(finishedText(app, trip), { action: 'Шаги из «Здоровья»', run: () => importFromHealth(app, trip.id), duration: 8000 });
+      } else {
+        app.toast(finishedText(app, trip));
+      }
     },
     'cancel-trip': async (app) => {
       const ok = await app.confirm({ title: 'Отменить поездку?', text: 'Запись, этапы и трек будут удалены.', confirm: 'Удалить запись', danger: true });

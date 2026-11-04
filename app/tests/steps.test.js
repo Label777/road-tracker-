@@ -2,7 +2,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { segmentDistances } from '../src/core/geo.js';
-import { createStepDetector, segmentSteps, tripSteps, strideFromHeight, DEFAULT_STRIDE_M } from '../src/core/steps.js';
+import { createStepDetector, segmentSteps, tripSteps, strideFromHeight, DEFAULT_STRIDE_M, healthRanges, healthInput, parseHealthResult } from '../src/core/steps.js';
 import { movementTotals } from '../src/core/analytics.js';
 import { Store } from '../src/data/store.js';
 import { MemoryBackend } from '../src/data/db.js';
@@ -125,5 +125,31 @@ describe('Расстояние по этапам', () => {
     assert.equal(m.walkTrips, 1);
     assert.equal(m.estimated, true);
     assert.ok(m.gpsMeters > 1200);
+  });
+});
+
+describe('Шаги из «Здоровья»', () => {
+  const now = Date.parse('2026-11-04T17:00:00Z');
+  const segs = [
+    { id: 'w1', transport_type: 'walk', started_at: now - 95 * MIN, finished_at: now - 80 * MIN + 30_000 },
+    { id: 'b', transport_type: 'bus', started_at: now - 80 * MIN, finished_at: now - 41 * MIN },
+    { id: 'w2', transport_type: 'walk', started_at: now - 40 * MIN - 20_000, finished_at: now - 30 * MIN },
+    { id: 'w3', transport_type: 'walk', started_at: null, finished_at: null },
+  ];
+
+  test('интервалы пеших этапов в минутах назад (с запасом наружу)', () => {
+    const r = healthRanges(segs, now);
+    assert.deepEqual(r, [{ id: 'w1', fromMin: 95, toMin: 79 }, { id: 'w2', fromMin: 41, toMin: 30 }]);
+    assert.equal(healthInput(r), '95|79;41|30');
+  });
+
+  test('ответ команды: числа в любом формате, пустое значение — 0', () => {
+    const r = healthRanges(segs, now);
+    assert.deepEqual([...parseHealthResult('820;410', r)], [['w1', 820], ['w2', 410]]);
+    assert.deepEqual([...parseHealthResult('1\u00a0234,0\n17.6', r).values()], [1234, 18]);
+    assert.deepEqual([...parseHealthResult(';410', r).values()], [0, 410]);
+    assert.throws(() => parseHealthResult('820', r), /1 значений вместо 2/);
+    assert.throws(() => parseHealthResult('820;шаги', r), /«шаги»/);
+    assert.throws(() => parseHealthResult(null, r), /ничего не вернула/);
   });
 });

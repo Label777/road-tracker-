@@ -198,6 +198,21 @@ try {
   await b.click('[data-action="finish"]');
   await b.waitFor('!window.roadTracker.tracker.session', 'завершение');
 
+  // Шаги из «Здоровья»: ответ команды по ссылке x-success
+  const healthTrip = await b.evaluate(`window.roadTracker.store.liveTrips().find((t) => t.status === 'completed' && window.roadTracker.store.segmentsOf(t.id).some((s) => s.transport_type === 'walk' && s.finished_at))?.id`);
+  await b.evaluate(`window.roadTracker.saveSettings({ healthShortcut: true })`);
+  await b.go(`#/edit/${healthTrip}`);
+  check(await has('Шаги из «Здоровья»'), 'в поездке с ходьбой — кнопка «Шаги из «Здоровья»»');
+  await b.evaluate(`(async () => {
+    const { healthRanges } = await import('./src/core/steps.js');
+    const a = window.roadTracker;
+    await a.store.setMeta('healthPending', { tripId: '${healthTrip}', ranges: healthRanges(a.store.segmentsOf('${healthTrip}')), at: Date.now() });
+  })()`);
+  await b.go(`#/do/health?trip=${healthTrip}&result=1234`);
+  await b.waitFor(`location.hash === '#/edit/${healthTrip}'`, 'возврат из команды');
+  check(await b.evaluate(`window.roadTracker.store.segmentsOf('${healthTrip}').find((s) => s.transport_type === 'walk').steps === 1234`), 'шаги из ответа команды сохранены в пеший этап');
+  check(await b.evaluate('document.querySelector("#toast").innerText.includes("1\u00a0234")'), 'подсказка: сколько шагов пришло из «Здоровья»');
+
   // Место
   await b.go('#/place/new-home');
   await b.waitFor('document.querySelector("[data-field=latitude]")', 'редактор места');
