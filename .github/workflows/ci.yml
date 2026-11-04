@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Доменное ядро (swift test)
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Тесты RoadTrackerCore
+        working-directory: Packages/RoadTrackerCore
+        run: swift test
+
+  database:
+    name: Схема Supabase (PostgreSQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Установить PostgreSQL
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql
+      - name: Тесты схемы и RLS
+        run: supabase/tests/run_local.sh
+
+  ios:
+    name: iOS — сборка и тесты на симуляторе
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Выбрать Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          xcodebuild -version
+      - name: XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Выбрать симулятор iPhone
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)["devices"]
+          ios=[(k,v) for k,v in d.items() if "iOS" in k]
+          ios.sort(key=lambda kv: [int(x) for x in kv[0].split("iOS-")[-1].split("-")])
+          for k,v in reversed(ios):
+              phones=[x for x in v if x["name"].startswith("iPhone")]
+              if phones: print(phones[0]["udid"]); break
+          ')
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "Simulator: $UDID"
+      - name: Сборка и тесты
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project RoadTracker.xcodeproj \
+            -scheme RoadTracker \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild.log | grep -E "error:|warning: .*concurrency|Test Suite|Test case|passed|failed|\*\* (BUILD|TEST)" || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" xcodebuild.log
+      - name: Ошибки компиляции
+        if: failure()
+        run: grep -E "error:" xcodebuild.log | sort -u | head -100 || true
+      - name: Сохранить лог
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
