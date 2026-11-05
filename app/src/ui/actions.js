@@ -2,6 +2,7 @@
 import { formatMoney } from '../core/money.js';
 import { formatDuration, zonedParts } from '../core/time.js';
 import { usualPlan, placeToday, loggedToday } from '../core/usual.js';
+import { staleTrip } from '../core/stale.js';
 import { DIRECTIONS, formatTime } from './format.js';
 
 export const suggestedDirection = (now = Date.now()) => (zonedParts(now).hour < 14 ? 'to_work' : 'to_home');
@@ -27,12 +28,42 @@ export async function startTrip(app, { direction, routeId = null, gps = null, se
   return true;
 }
 
-/** Завершить запись; возвращает сохранённую поездку. */
-export async function finishTrip(app) {
+/** Последняя отметка в пути: начало этапа, контролёр, точка GPS. */
+export function lastActivity(app) {
   const s = app.tracker.session;
   if (!s) return null;
+  const { store } = app;
+  const times = [
+    ...store.segmentsOf(s.tripId).map((x) => x.started_at),
+    ...store.inspectionsOf(s.tripId).map((x) => x.observed_at),
+    store.trackOf(s.tripId).at(-1)?.t,
+  ].filter((t) => t != null);
+  return times.length ? Math.max(...times) : null;
+}
+
+/** Запись идёт подозрительно долго — когда, скорее всего, поездка закончилась. */
+export function staleInfo(app, now = Date.now()) {
+  const s = app.tracker.session;
+  if (!s) return null;
+  const trip = app.store.trip(s.tripId);
+  const usual = trip ? usualPlan(app.store.completedSummaries(), trip.direction) : null;
+  return staleTrip(s, { now, lastActivity: lastActivity(app), usualMs: usual?.durationMs ?? null });
+}
+
+/**
+ * Завершить запись; возвращает сохранённую поездку.
+ * at — время окончания, если поездку завершают задним числом (забыли нажать «Завершить»).
+ */
+export async function finishTrip(app, { at = null } = {}) {
+  const s = app.tracker.session;
+  if (!s) return null;
+  if (at != null) {
+    const floor = Math.max(s.startedAt, lastActivity(app) ?? s.startedAt);
+    if (at < floor) throw new Error(`Окончание не может быть раньше последней отметки в пути (${formatTime(floor)})`);
+    if (at > Date.now()) throw new Error('Это время ещё не наступило');
+  }
   app.tracker.dismissNotice();
-  await app.tracker.send({ type: 'finish' });
+  await app.tracker.send(at != null ? { type: 'finish', at } : { type: 'finish' });
   app.ui.liveMap = null;
   return app.store.trip(s.tripId);
 }

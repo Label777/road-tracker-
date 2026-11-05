@@ -18,6 +18,7 @@ import { frequentCosts, routeNumbers } from '../suggest.js';
 import { finishTrip, finishedText } from '../actions.js';
 import { openChangeSheet, openEditSheet, MAIN_TRANSPORT } from './start-sheet.js';
 import { canImportHealth, importFromHealth } from '../health.js';
+import { staleNotice } from '../stale.js';
 
 /** Пока идём пешком: откуда шаги и как включить датчик. */
 function walkingNote(app, estimate, sensing) {
@@ -88,6 +89,7 @@ function recording(app) {
       </div>
 
       <div class="trip-panel">
+        ${staleNotice(app)}
         ${notice(tracker.notice, tracker.notice?.kind === 'suggest' ? html`<button class="btn btn-primary btn-sm" data-action="finish">Завершить</button>` : '')}
         <div class="row-between">
           <div>

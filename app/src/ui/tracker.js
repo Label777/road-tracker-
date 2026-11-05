@@ -6,6 +6,8 @@
 import { reduce, initialState, sessionActiveMs } from '../core/tracking.js';
 import { gpsPolicy, shouldRecord } from '../core/geo.js';
 
+const DATA_EFFECTS = new Set(['tripStarted', 'tripPaused', 'tripResumed', 'tripFinished', 'tripCancelled']);
+
 export class Tracker {
   constructor(store, { geolocation = globalThis.navigator?.geolocation, clock = () => Date.now() } = {}) {
     this.store = store;
@@ -20,6 +22,13 @@ export class Tracker {
     this.notice = null; // сообщение для пользователя
     this.listeners = new Set();
     this.queue = Promise.resolve();
+    // Запись указывает на поездку, которая уже сохранена или удалена (например, с другого
+    // устройства) — запись окончена.
+    const t = this.state.status === 'recording' ? store.trip(this.state.session.tripId) : null;
+    if (this.state.status === 'recording' && (!t || t.deleted_at || t.status === 'completed')) {
+      this.state = initialState();
+      store.setMeta('tracking', this.state).catch(() => {});
+    }
     if (this.state.status === 'recording' && this.state.session.mode === 'gps' && !this.state.session.pausedSince) {
       this.#startGps(); // поездка продолжается после перезагрузки страницы
     }
@@ -54,9 +63,15 @@ export class Tracker {
   async #handle(event) {
     const { state, effects } = reduce(this.state, { at: this.clock(), ...event });
     if (state === this.state && !effects.length) return; // ничего не изменилось (частые GPS-события)
+    // Сначала — данные поездки (создать, поставить на паузу, сохранить в историю, удалить),
+    // и только потом — смена состояния записи. Иначе, если закрыть Safari сразу после
+    // «Завершить», запись уже окончена, а поездка так и не сохранена: её нет ни в истории,
+    // ни на экране поездки. Если сохранение не удалось, запись остаётся, и можно повторить.
+    const data = effects.filter((e) => DATA_EFFECTS.has(e.type));
+    for (const e of data) await this.#apply(e);
     this.state = state;
     await this.store.setMeta('tracking', state);
-    for (const e of effects) await this.#apply(e);
+    for (const e of effects) if (!DATA_EFFECTS.has(e.type)) await this.#apply(e);
     this.#emit();
   }
 

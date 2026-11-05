@@ -201,7 +201,9 @@ describe('Хранилище: копия, индексы, производите
     assert.equal(reopened.trackOf(id).length, 2);
     await reopened.deleteTrip(id);
     assert.equal(reopened.segmentsOf(id).length, 0);
-    assert.equal(reopened.trackOf(id).length, 0);
+    assert.equal(reopened.trackOf(id).length, 2, 'трек остаётся — поездку можно восстановить');
+    await reopened.restoreTrip(id);
+    assert.equal(reopened.segmentsOf(id).length, 2);
   });
 
   test('сводки кэшируются до следующего изменения', async () => {

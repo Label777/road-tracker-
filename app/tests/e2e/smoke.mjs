@@ -425,6 +425,37 @@ try {
   check(true, 'карта (Leaflet) загружается без сети');
   await b.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 
+  // Забытая запись: поездку начали вчера и не завершили — её видно в истории, сайт предлагает завершить
+  await b.evaluate(`window.roadTracker.tracker.send({ type: 'start', direction: 'to_home', mode: 'manual', at: Date.now() - 13 * 3600e3 })`);
+  await b.waitFor('window.roadTracker.tracker.session', 'старт вчера');
+  await b.go('#/history');
+  await b.waitFor('document.querySelector(".live-row")', 'незавершённая поездка в истории');
+  check(await has('Сейчас в пути') && await has('забыли завершить'), 'история: незавершённая поездка наверху и предложение завершить');
+  await b.go('#/home');
+  await b.waitFor('document.querySelector(".stale-notice [data-action=stale-finish]")', 'плашка на главной');
+  const staleAt = +(await b.evaluate('document.querySelector("[data-action=stale-finish]").dataset.at'));
+  const tripsBefore = await b.evaluate('window.roadTracker.store.completedSummaries().length');
+  await b.click('[data-action="stale-finish"]');
+  await b.waitFor('!window.roadTracker.tracker.session', 'завершение задним числом');
+  const finished = await b.evaluate(`(() => { const s = window.roadTracker.store.completedSummaries(); return { n: s.length, end: s.find((x) => x.direction === 'to_home' && x.finishedAt === ${staleAt})?.finishedAt }; })()`);
+  check(finished.n === tripsBefore + 1 && finished.end === staleAt && staleAt < Date.now() - 11 * 3600e3,
+    'забытая поездка завершена в вероятное время (а не «сейчас») и попала в историю');
+
+  // Удалённая поездка возвращается из «Недавно удалённых»
+  const victim = await b.evaluate('window.roadTracker.store.completedSummaries()[0].id');
+  await b.go(`#/edit/${victim}`);
+  await b.waitFor('document.querySelector("[data-action=delete]")', 'редактор');
+  await b.click('[data-action="delete"]');
+  await b.waitFor('document.querySelector("#sheet [data-action=sheet-confirm]")', 'подтверждение удаления');
+  await b.click('#sheet [data-action="sheet-confirm"]');
+  await b.waitFor(`window.roadTracker.store.trip('${victim}').deleted_at`, 'удалена');
+  await b.go('#/history');
+  await b.waitFor('document.querySelector(".trash")', 'недавно удалённые');
+  await b.evaluate('document.querySelector(".trash").open = true');
+  await b.click(`[data-action="restore-trip"][data-id="${victim}"]`);
+  await b.waitFor(`!window.roadTracker.store.trip('${victim}').deleted_at`, 'восстановлена');
+  check(true, 'удалённая поездка восстановлена из «Недавно удалённых»');
+
   // Производительность: 2 000 поездок, время построения экранов
   await b.evaluate(`(async () => {
     const T0 = Date.now() - 86_400_000;

@@ -23,6 +23,7 @@ import { doView } from './views/do.js';
 import { shortcutsView } from './views/shortcuts.js';
 import { pastTripView } from './views/past-trip.js';
 import { StepSensor } from './step-sensor.js';
+import { STALE_ACTIONS } from './stale.js';
 
 const ROUTES = [
   [/^#\/(home)?$/, dashboard],
@@ -236,6 +237,7 @@ async function boot() {
   });
 
   const GLOBAL_ACTIONS = {
+    ...STALE_ACTIONS,
     'dismiss-notice': () => tracker.dismissNotice(),
     'open-trip': () => app.navigate('#/trip'),
     'quick-start': () => quickStart(app),

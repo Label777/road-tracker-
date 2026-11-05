@@ -12,6 +12,7 @@ import { sheetHeader } from '../sheet.js';
 import { suggestedDirection, startTrip, recordUsual, usualToday } from '../actions.js';
 import { saveBackup } from '../backup.js';
 import { openStartSheet } from './start-sheet.js';
+import { staleNotice } from '../stale.js';
 
 export { suggestedDirection };
 
@@ -220,6 +221,7 @@ export const dashboard = {
         <p class="date"><b>${greeting(now)}</b> · ${dateText}</p>
       </header>
 
+      ${recording ? staleNotice(app, now) : ''}
       <section class="hero">
         ${startOrb(app, dir)}
         ${recording ? html`<p class="t-caption">Нажмите, чтобы открыть поездку</p>` : html`

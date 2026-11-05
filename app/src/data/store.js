@@ -269,8 +269,11 @@ export class Store {
     const trip = this.trip(session.tripId);
     if (!trip) return;
     const now = this.clock();
-    const track = this.trackOf(trip.id);
+    // Завершение задним числом: точки трека после окончания — уже не эта поездка
+    const fullTrack = this.trackOf(trip.id);
+    const track = fullTrack.filter((p) => p.t <= end);
     await this.transact((tx) => {
+      for (const p of fullTrack) if (p.t > end) tx.del('track_points', p.id);
       const segments = this.segmentsOf(trip.id).map((seg, i, all) => (i === all.length - 1 && seg.finished_at == null
         ? { ...seg, finished_at: Math.max(end, seg.started_at ?? end) } : seg));
       // Расстояние каждого этапа — из трека, если пользователь не вводил его сам
@@ -304,10 +307,41 @@ export class Store {
         tx.put('inspections', { ...i, deleted_at: now, updated_at: now });
         tx.enqueue('inspections', i.id, 'delete');
       }
-      // Трек — чувствительные данные и хранится только локально: удаляем сразу.
-      for (const p of this.trackOf(tripId)) tx.del('track_points', p.id);
+      // Трек остаётся на устройстве, чтобы поездку можно было восстановить из «Недавно удалённых»;
+      // старые точки стираются через 30 дней (purgeTrackPoints), в облако трек не уходит.
       tx.put('trips', { ...trip, deleted_at: now, updated_at: now });
       tx.enqueue('trips', tripId, 'delete');
+    });
+  }
+
+  /** Удалённые поездки за последние days дней — их можно восстановить. */
+  deletedTrips(days = 30) {
+    const since = this.clock() - days * 86_400_000;
+    return [...this.data.trips.values()].filter((t) => t.deleted_at && t.deleted_at >= since).sort((a, b) => b.deleted_at - a.deleted_at);
+  }
+
+  /** Незавершённые поездки, кроме той, что сейчас записывается (запись прервалась). */
+  unfinishedTrips(currentId = null) {
+    return this.live('trips').filter((t) => (t.status === 'active' || t.status === 'paused') && t.id !== currentId)
+      .sort((a, b) => b.started_at - a.started_at);
+  }
+
+  /** Вернуть удалённую поездку вместе с этапами и отметками, удалёнными тем же действием. */
+  async restoreTrip(tripId) {
+    const trip = this.data.trips.get(tripId);
+    if (!trip?.deleted_at) return;
+    const when = trip.deleted_at;
+    const now = this.clock();
+    await this.transact((tx) => {
+      for (const name of ['trip_segments', 'inspections']) {
+        for (const row of this.data[name].values()) {
+          if (row.trip_id !== tripId || row.deleted_at !== when) continue;
+          tx.put(name, { ...row, deleted_at: null, updated_at: now });
+          tx.enqueue(name, row.id, 'upsert');
+        }
+      }
+      tx.put('trips', { ...trip, deleted_at: null, updated_at: now });
+      tx.enqueue('trips', tripId, 'upsert');
     });
   }
 

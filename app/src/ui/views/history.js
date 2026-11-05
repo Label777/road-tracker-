@@ -6,7 +6,9 @@ import { formatMoney, parseMoney, moneyToInput } from '../../core/money.js';
 import { formatDuration, formatHours, startOfDay, addMonths, periodInterval, addDays, zonedParts } from '../../core/time.js';
 import { totalsOf, inInterval, dailyTotals } from '../../core/analytics.js';
 import { emptyFilter, matchesFilter, activeFilterCount, monthGrid } from '../../core/editing.js';
-import { DIRECTIONS, TRANSPORT, ICONS, formatMonth, formatDayLong, toInputDate, fromInputDate } from '../format.js';
+import { DIRECTIONS, TRANSPORT, ICONS, formatMonth, formatDayLong, formatDateTime, formatTime, toInputDate, fromInputDate } from '../format.js';
+import { staleNotice } from '../stale.js';
+import { usualPlan } from '../../core/usual.js';
 import { sheetHeader } from '../sheet.js';
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -177,6 +179,67 @@ const filterSheet = {
   },
 };
 
+/** Когда, скорее всего, закончилась прерванная поездка: обычная длительность или последняя отметка. */
+function likelyEnd(store, trip, now = Date.now()) {
+  const times = [
+    ...store.segmentsOf(trip.id).map((x) => x.started_at),
+    ...store.inspectionsOf(trip.id).map((x) => x.observed_at),
+    store.trackOf(trip.id).at(-1)?.t,
+  ].filter((t) => t != null);
+  const last = times.length ? Math.max(...times) : trip.started_at;
+  const usual = usualPlan(store.completedSummaries(), trip.direction)?.durationMs ?? 45 * 60_000;
+  return Math.min(now, Math.max(trip.started_at + usual, last + 5 * 60_000));
+}
+
+/** Прерванные записи (запись поездки потерялась, а поездка осталась «в пути»). */
+function unfinishedSection(app) {
+  const list = app.store.unfinishedTrips(app.tracker.session?.tripId);
+  if (!list.length) return '';
+  return html`<section aria-label="Не завершены">
+    <div class="section-title"><h2>Не завершены</h2></div>
+    <p class="t-caption" style="margin-bottom:var(--s-3)">Запись этих поездок прервалась, поэтому их нет в истории и аналитике. Завершите — и они вернутся.</p>
+    ${list.map((t) => {
+      const end = likelyEnd(app.store, t);
+      return html`<div class="restore-row">
+        <span class="main"><span class="t-sub">${DIRECTIONS[t.direction]} · ${formatDateTime(t.started_at)}</span>
+          <span class="t-caption">${formatMoney(app.store.tripCost(t))} · завершится в ${formatTime(end)}</span></span>
+        <button class="btn btn-primary btn-sm" data-action="finish-unfinished" data-id="${t.id}" data-at="${end}">Завершить</button>
+      </div>`;
+    })}</section>`;
+}
+
+/** Недавно удалённые — их можно вернуть (с этапами, отметками и треком). */
+function trashSection(app, open) {
+  const list = app.store.deletedTrips(30);
+  if (!list.length) return '';
+  const costOf = (t) => [...app.store.data.trip_segments.values()].filter((x) => x.trip_id === t.id && x.deleted_at === t.deleted_at).reduce((a, x) => a + (x.cost || 0), 0) + (t.extra_cost || 0);
+  return html`<details class="trash" ${open ? 'open' : ''}>
+    <summary class="t-sub">Недавно удалённые · ${list.length}</summary>
+    <p class="t-caption" style="margin:var(--s-2) 0 var(--s-3)">Удалённые поездки хранятся здесь 30 дней.</p>
+    ${list.map((t) => html`<div class="restore-row">
+      <span class="main"><span class="t-sub">${DIRECTIONS[t.direction]} · ${formatDateTime(t.started_at)}</span>
+        <span class="t-caption">${t.finished_at ? `${formatTime(t.started_at)}–${formatTime(t.finished_at)} · ` : 'не завершена · '}${formatMoney(costOf(t))} · удалена ${formatDateTime(t.deleted_at)}</span></span>
+      <button class="btn btn-secondary btn-sm" data-action="restore-trip" data-id="${t.id}">Восстановить</button>
+    </div>`)}
+  </details>`;
+}
+
+/** Незавершённая поездка — наверху истории, чтобы она не «терялась». */
+function liveSection(app) {
+  const s = app.tracker.session;
+  if (!s) return '';
+  const trip = app.store.trip(s.tripId);
+  return html`<section aria-label="Сейчас в пути">
+    <div class="section-title"><h2>Сейчас в пути</h2><a href="#/trip">Открыть</a></div>
+    ${staleNotice(app)}
+    <a class="live-row" href="#/trip">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="main"><span class="t-sub">${DIRECTIONS[trip?.direction ?? 'other']} · с ${formatDateTime(s.startedAt)}</span>
+        <span class="t-caption">Запись идёт · <span data-timer="duration">${formatDuration(app.tracker.activeMs())}</span> · в историю попадёт после «Завершить»</span></span>
+      <span class="t-num">${formatMoney(trip ? app.store.tripCost(trip) : 0)}</span>
+    </a></section>`;
+}
+
 export const historyView = {
   tab: 'history',
   render(app) {
@@ -194,15 +257,31 @@ export const historyView = {
           ${iconButton(ICONS.filter, n ? `Фильтры: ${n}` : 'Фильтры', { action: 'open-filters', count: n || '' })}`,
       })}
       <div class="stack-lg">
+        ${liveSection(app)}
+        ${unfinishedSection(app)}
+        ${!trips.length ? trashSection(app, true) : ''}
         ${unconfirmed.length ? html`<section><div class="section-title"><h2>Требуют подтверждения</h2></div>${unconfirmed.map((t) => tripCard(app.store, t))}</section>` : ''}
         <div class="stack">
           ${segmented({ calendar: 'Календарь', list: 'Список' }, mode, { action: 'history-mode', label: 'Вид' })}
           ${n ? html`<div class="row-between"><span class="t-caption">Фильтров: ${n} · поездок: ${trips.length}</span><button class="btn btn-ghost btn-sm" data-action="reset-filter">Сбросить</button></div>` : ''}
         </div>
         ${mode === 'calendar' ? calendar(app, trips) : list(app, trips)}
+        ${trips.length ? trashSection(app, false) : ''}
       </div>`;
   },
   actions: {
+    'restore-trip': async (app, el) => {
+      await app.store.restoreTrip(el.dataset.id);
+      app.haptic('success');
+      app.toast('Поездка восстановлена', { action: 'Открыть', run: () => app.navigate(`#/edit/${el.dataset.id}`) });
+    },
+    'finish-unfinished': async (app, el) => {
+      const trip = app.store.trip(el.dataset.id);
+      if (!trip) return;
+      await app.store.finishTrip({ tripId: trip.id, pauses: trip.pauses ?? [], mode: trip.tracking_mode ?? 'manual' }, +el.dataset.at);
+      app.haptic('success');
+      app.toast('Поездка завершена и сохранена в истории', { action: 'Изменить', run: () => app.navigate(`#/edit/${trip.id}`) });
+    },
     'open-filters': (app) => app.openSheet(filterSheet),
     'reset-filter': (app) => { app.ui.filter = emptyFilter(); app.rerender(); },
     'history-mode': (app, el) => { app.ui.historyMode = el.dataset.value; app.haptic(); app.rerender(); },

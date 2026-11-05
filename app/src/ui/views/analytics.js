@@ -10,6 +10,7 @@ import {
 } from '../../core/analytics.js';
 import { inspectionStats } from '../../core/inspections.js';
 import { insights } from '../../core/insights.js';
+import { staleNotice } from '../stale.js';
 import { TRANSPORT, TRANSPORT_ICONS, OUTCOME_LABELS, RELIABILITY, ICONS, formatPercent, LOCALE, formatDistance, plural } from '../format.js';
 
 const PERIODS = { week: 'Неделя', month: 'Месяц', year: 'Год' };
@@ -233,16 +234,22 @@ export const analyticsView = {
     const avgTrip = averageTripMs(t);
 
     if (!all.length) {
-      return html`${topBar('Аналитика', { large: true })}${emptyState({
-        icon: ICONS.analytics, title: 'Пока нечего анализировать',
-        text: 'После первых поездок здесь появятся расходы, время в дороге, сравнение маршрутов и статистика контролёров.',
-        action: html`<a class="btn btn-primary btn-sm" href="#/past">${ICONS.plus}Добавить прошлую поездку</a>`,
+      const live = !!app.tracker.session;
+      return html`${topBar('Аналитика', { large: true })}${live ? html`<div class="stack" style="margin-bottom:var(--s-4)">${staleNotice(app, now)}</div>` : ''}${emptyState({
+        icon: ICONS.analytics, title: live ? 'Поездка ещё записывается' : 'Пока нечего анализировать',
+        text: live
+          ? 'Завершённых поездок пока нет. Текущая запись появится здесь, как только вы нажмёте «Завершить» на экране поездки.'
+          : 'После первых поездок здесь появятся расходы, время в дороге, сравнение маршрутов и статистика контролёров.',
+        action: live
+          ? html`<a class="btn btn-primary btn-sm" href="#/trip">Открыть поездку</a>`
+          : html`<a class="btn btn-primary btn-sm" href="#/past">${ICONS.plus}Добавить прошлую поездку</a>`,
       })}`;
     }
 
     return html`
       ${topBar('Аналитика', { large: true, actions: html`<a class="icon-btn" href="#/past" aria-label="Добавить прошлую поездку">${ICONS.plus}</a>` })}
       <div class="stack-lg">
+        ${app.tracker.session ? html`${staleNotice(app, now)}<a class="notice" href="#/trip" style="text-decoration:none;color:inherit"><div class="body t-callout">Идёт запись поездки — в аналитику она попадёт после «Завершить». Открыть →</div></a>` : ''}
         <a class="btn btn-secondary" href="#/past">${ICONS.plus}Добавить прошлую поездку</a>
         ${segmented(PERIODS, period, { action: 'period', label: 'Период' })}
         ${insightsSection(all, period, now)}
