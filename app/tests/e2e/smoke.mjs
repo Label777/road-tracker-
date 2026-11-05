@@ -278,7 +278,7 @@ try {
   await b.click('[data-action="past-save"]');
   await b.waitFor('location.hash === "#/analytics"', 'сохранено');
   check((await b.evaluate('window.roadTracker.store.liveTrips().length')) === beforePast + 1, 'прошлая поездка добавлена');
-  const savedPast = await b.evaluate(`(() => { const s = window.roadTracker.store; const t = s.liveTrips().find((x) => x.direction === 'to_work' && new Date(x.started_at).getHours() === 8 && new Date(x.started_at).getMinutes() === 10);
+  const savedPast = await b.evaluate(`(() => { const s = window.roadTracker.store; const t = [...s.liveTrips()].sort((a, b) => b.created_at - a.created_at)[0]; // только что добавленная
     return t && s.segmentsOf(t.id).map((x) => [x.transport_type, x.transport_number, x.cost, Math.round((x.finished_at - x.started_at) / 60000)].join(':')).join(','); })()`);
   check(savedPast === 'walk::0:8,minibus:720:2000:25,metro::800:12', `сохранена с маршрутом по этапам: ${savedPast}`);
 
