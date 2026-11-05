@@ -156,6 +156,9 @@ try {
   await b.go('#/home');
   await b.click('nav.tabs [data-nav="quick-add"]');
   await b.waitFor('document.querySelector("#sheet [data-action=qa-save]")', 'шторка добавления');
+  // направление прошлой поездки — «Домой»; утром шторка предлагает «На работу», поэтому выбираем явно
+  await b.click('#sheet [data-action="qa-direction"][data-value="to_home"]');
+  await b.waitFor('document.querySelector("#sheet").innerText.includes("Как в прошлый раз")', 'подстановка');
   check((await sheetText()).includes('Как в прошлый раз'), 'быстрое добавление подставляет прошлую поездку');
   await b.click('#sheet [data-action="qa-day"][data-value="yesterday"]');
   await b.click('#sheet [data-action="qa-save"]');
@@ -244,6 +247,40 @@ try {
   check(true, 'старт по шаблону открывает первый этап');
   await b.click('[data-action="finish"]');
   await b.waitFor('!window.roadTracker.tracker.session', 'завершение');
+
+  // Прошлая поездка по этапам: пешком 8 мин → маршрутка 720, 25 мин, 20 ₴ → метро, 12 мин, 8 ₴
+  const beforePast = await b.evaluate('window.roadTracker.store.liveTrips().length');
+  await b.go('#/analytics');
+  await b.click('a[href="#/past"].btn');
+  await b.waitFor('location.hash === "#/past" && document.querySelector("[data-past-summary]")', 'экран прошлой поездки');
+  await b.click('[data-action="past-direction"][data-value="to_work"]');
+  await b.click('[data-action="past-day"]:nth-child(2)');
+  await b.setField('[data-field="past.start"]', '08:10');
+  await b.evaluate(`(() => { const st = window.roadTracker.ui.past; st.stages = [{ transport_type: 'walk', transport_number: '', cost: 0, minutes: 8 }]; window.roadTracker.rerender(); })()`);
+  await b.waitFor('document.querySelectorAll(".stage-card").length === 1', 'один этап');
+  await b.click('[data-action="past-add"]');
+  await b.waitFor('document.querySelectorAll(".stage-card").length === 2', 'второй этап');
+  await b.click('.stage-card:nth-of-type(2) [data-action="past-transport"][data-value="minibus"], [data-action="past-transport"][data-i="1"][data-value="minibus"]');
+  await b.waitFor('document.querySelector("[data-field=\\"past.1.cost\\"]")', 'поле цены маршрутки');
+  await b.setField('[data-field="past.1.number"]', '720');
+  await b.setField('[data-field="past.1.cost"]', '20');
+  await b.setField('[data-field="past.1.minutes"]', '25');
+  await b.click('[data-action="past-add"]');
+  await b.waitFor('document.querySelectorAll(".stage-card").length === 3', 'третий этап');
+  await b.click('[data-action="past-transport"][data-i="2"][data-value="metro"]');
+  await b.waitFor('document.querySelector("[data-field=\\"past.2.cost\\"]")', 'поле цены метро');
+  await b.setField('[data-field="past.2.cost"]', '8');
+  await b.setField('[data-field="past.2.minutes"]', '12');
+  const summary = await b.evaluate('document.querySelector("[data-past-summary]").textContent.replace(/\\s/g, " ")');
+  check(summary === '08:10 → 08:55 · 45 мин · 1 пересадка · 28,00 ₴' || summary === '08:10 → 08:55 · 45 мин · 1 пересадка · 28 ₴', `итог считается по этапам: ${summary}`);
+  check((await b.evaluate('document.querySelector("[data-stage-time=\\"1\\"]").textContent')) === '08:18–08:43', 'время каждого этапа считается само');
+  await b.screenshot(SHOTS, '9-past-trip');
+  await b.click('[data-action="past-save"]');
+  await b.waitFor('location.hash === "#/analytics"', 'сохранено');
+  check((await b.evaluate('window.roadTracker.store.liveTrips().length')) === beforePast + 1, 'прошлая поездка добавлена');
+  const savedPast = await b.evaluate(`(() => { const s = window.roadTracker.store; const t = s.liveTrips().find((x) => x.direction === 'to_work' && new Date(x.started_at).getHours() === 8 && new Date(x.started_at).getMinutes() === 10);
+    return t && s.segmentsOf(t.id).map((x) => [x.transport_type, x.transport_number, x.cost, Math.round((x.finished_at - x.started_at) / 60000)].join(':')).join(','); })()`);
+  check(savedPast === 'walk::0:8,minibus:720:2000:25,metro::800:12', `сохранена с маршрутом по этапам: ${savedPast}`);
 
   // Шаги из «Здоровья»: ответ команды по ссылке x-success
   const healthTrip = await b.evaluate(`window.roadTracker.store.liveTrips().find((t) => t.status === 'completed' && window.roadTracker.store.segmentsOf(t.id).some((s) => s.transport_type === 'walk' && s.finished_at))?.id`);

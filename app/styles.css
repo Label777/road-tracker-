@@ -638,3 +638,16 @@ fieldset.segment legend { font: 700 0.8rem/1 var(--font-text); color: var(--acce
 .timeline-item.editable::before { left: calc(-28px + var(--s-2)); }
 .edit-mark { display: inline-flex; margin-left: 6px; color: var(--text-tertiary); vertical-align: -3px; }
 .edit-mark svg { width: 15px; height: 15px; }
+
+/* Прошлая поездка по этапам */
+.stages { display: grid; gap: 0; margin-bottom: var(--s-3); }
+.stage-card { padding: var(--s-4); border-radius: var(--r-lg); background: var(--surface-primary); border: 1px solid color-mix(in srgb, var(--tr) 35%, var(--border)); display: grid; gap: var(--s-3); }
+.stage-head { display: flex; align-items: center; gap: var(--s-2); }
+.stage-head .t-caption { margin-left: auto; font-variant-numeric: tabular-nums; }
+.stage-num { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--tr); color: #0b0d10; font: 700 var(--fs-min)/1 var(--font-numeric); }
+.stage-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: var(--s-2); }
+.stage-fields .field { margin: 0; }
+.stage-card .chip svg { width: 16px; height: 16px; }
+.stage-card .chip.on { border-color: var(--tr); background: color-mix(in srgb, var(--tr) 18%, var(--surface-elevated)); color: var(--text-primary); }
+.stage-link { justify-self: start; margin: 4px 0 4px 22px; padding: 6px 0 6px 18px; border-left: 2px dashed var(--border); font: var(--t-caption); color: var(--text-tertiary); }
+.past-summary { display: grid; gap: 4px; padding: var(--s-4); border-radius: var(--r-lg); background: color-mix(in srgb, var(--accent) 8%, var(--surface-primary)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); }

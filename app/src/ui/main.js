@@ -21,6 +21,7 @@ import { designView } from './views/design.js';
 import { openQuickAdd } from './views/quick-add.js';
 import { doView } from './views/do.js';
 import { shortcutsView } from './views/shortcuts.js';
+import { pastTripView } from './views/past-trip.js';
 import { StepSensor } from './step-sensor.js';
 
 const ROUTES = [
@@ -37,6 +38,7 @@ const ROUTES = [
   [/^#\/route\/(?<id>[\w-]+)$/, routeEditorView],
   [/^#\/design$/, designView],
   [/^#\/shortcuts$/, shortcutsView],
+  [/^#\/past$/, pastTripView],
   [/^#\/do\/(?<verb>[\w-]+)(?:\?(?<query>.*))?$/, doView],
 ];
 

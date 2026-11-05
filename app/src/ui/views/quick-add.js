@@ -103,6 +103,7 @@ function render(app) {
       ${costs.length ? html`<div class="chips">${costs.map((c) => html`<button class="chip ${c === sum ? 'on' : ''}" data-action="qa-cost" data-value="${c}">${formatMoney(c)}</button>`)}</div>` : ''}
 
       ${issues.length ? html`<p class="t-caption ${blocking ? 'error' : 'warn'}" id="qa-issues">${issueMessage(blocking ?? issues[0])}</p>` : html`<p id="qa-issues" hidden></p>`}
+      <button class="btn btn-ghost btn-sm" data-action="qa-stages">${ICONS.route}С пересадками — по этапам и времени</button>
       <div class="btn-row">
         ${secondaryButton('Подробнее', { action: 'qa-more' })}
         ${primaryButton('Сохранить', { action: 'qa-save', disabled: blocking ? true : null })}
@@ -185,6 +186,7 @@ export function openQuickAdd(app, opts = {}) {
         a.closeSheet();
         a.toast('Поездка добавлена');
       },
+      'qa-stages': (a) => { a.closeSheet(); a.navigate('#/past'); },
       'qa-more': (a) => {
         a.ui.pendingDraft = toDraft(a, a.ui.qa);
         a.closeSheet();

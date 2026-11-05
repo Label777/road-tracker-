@@ -6,7 +6,7 @@ const BASE = process.env.BASE_URL || 'http://localhost:8080/';
 const DIR = process.env.SHOTS_DIR || 'screens';
 const SIZES = { se: [375, 667], i15: [393, 852], max: [430, 932] };
 const ONLY = process.env.SIZES ? process.env.SIZES.split(',') : Object.keys(SIZES);
-const SCREENS = (process.env.SCREENS || 'home,home-fold,trip-live,new,history,day,analytics,profile,shortcuts,places,design').split(',');
+const SCREENS = (process.env.SCREENS || 'home,home-fold,trip-live,new,history,day,analytics,profile,shortcuts,past,places,design').split(',');
 
 const b = await launch();
 try {
@@ -19,7 +19,7 @@ try {
     await b.viewport(...SIZES[size]);
     for (const screen of SCREENS) {
       const hash = {
-        home: '#/home', 'home-fold': '#/home', 'trip-live': '#/trip', shortcuts: '#/shortcuts', new: '#/history', history: '#/history',
+        home: '#/home', 'home-fold': '#/home', 'trip-live': '#/trip', shortcuts: '#/shortcuts', past: '#/past', new: '#/history', history: '#/history',
         day: '#/history', analytics: '#/analytics', profile: '#/profile', places: '#/places', design: '#/design',
       }[screen];
       await b.evaluate('window.roadTracker.ui.sheet && window.roadTracker.closeSheet()');

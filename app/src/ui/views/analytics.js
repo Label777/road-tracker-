@@ -236,13 +236,14 @@ export const analyticsView = {
       return html`${topBar('Аналитика', { large: true })}${emptyState({
         icon: ICONS.analytics, title: 'Пока нечего анализировать',
         text: 'После первых поездок здесь появятся расходы, время в дороге, сравнение маршрутов и статистика контролёров.',
-        action: html`<button class="btn btn-primary btn-sm" data-action="quick-add">Добавить поездку</button>`,
+        action: html`<a class="btn btn-primary btn-sm" href="#/past">${ICONS.plus}Добавить прошлую поездку</a>`,
       })}`;
     }
 
     return html`
-      ${topBar('Аналитика', { large: true })}
+      ${topBar('Аналитика', { large: true, actions: html`<a class="icon-btn" href="#/past" aria-label="Добавить прошлую поездку">${ICONS.plus}</a>` })}
       <div class="stack-lg">
+        <a class="btn btn-secondary" href="#/past">${ICONS.plus}Добавить прошлую поездку</a>
         ${segmented(PERIODS, period, { action: 'period', label: 'Период' })}
         ${insightsSection(all, period, now)}
 
